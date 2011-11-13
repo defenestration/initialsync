@@ -9,6 +9,7 @@ ver="Nov10 2011"
 # check for ffmpeg, etc, on new server if found on old
 # add -t -n to ssh to make it quiet
 # install postgres if found on old 
+# testtt
 
 #userlist=`/bin/ls -A /var/cpanel/users`
 dnr=/home/didnotrestore.txt
