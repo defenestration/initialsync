@@ -1,18 +1,22 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Nov10 2011"
+ver="Nov15 2011"
 #todo: 
 # match other php vars?   
-# exim alternate port?
 # php open_basedir
 # add home2 support, (grep etc passwd for user home)
-# check for ffmpeg, etc, on new server if found on old
+# check for ffmpeg, etc, on new server if found on old to avoid reinstalling
 # add -t -n to ssh to make it quiet
 # install postgres if found on old 
+# copy apf/csf allow configs?
+# copy modsec configs? or at least display it.
+# verify all users against current users for final sync.
+#modsec rules
 
 #userlist=`/bin/ls -A /var/cpanel/users`
 dnr=/home/didnotrestore.txt
 [ -s $dnr ] && dnrusers=`cat $dnr`
+starttime=`date +%F.%T`
 
 yesNo(){ #generic yesNo function
 #repeat if yes or no option not valid
@@ -82,7 +86,9 @@ while [ $mainloop == 0 ] ; do
  esac
 done
 echo
-echo 'Finished!'
+echo "Started at $starttime"
+echo "Finished at `date +%F.%T`"
+echo 'Done!'
 exit 0
 }
 
@@ -158,10 +164,11 @@ lowerttls
 getip        #asks for ip or checks a file to confirm destination
 accountcheck #if conflicting accounts are found, asks
 dedipcheck  #asks if an equal amount of ips are not found
+upcp
 phpmemcheck 
 thirdparty   
 mysqlcheck 
-upcpea
+upea
 phpapicheck  # to be ran after ea so php4 can be compiled in if needed
 acctcopy
 didntrestore
@@ -182,7 +189,8 @@ if [ "$dnrusers" ];then
  ls -l $dnr
  echo
  if yesNo 'Want to restore these failed users only?' ;then
-  userlist=$dnrusers	
+  userlist=$dnrusers
+  cp -rpf ${dnr}{,.bak}
   > $dnr
  else 
   echo "Okay, selecting all users for migration."
@@ -292,7 +300,7 @@ echo "Generating SSH keys"
 if ! [ -f ~/.ssh/id_rsa ]; then
  ssh-keygen -q -N "" -t rsa -f ~/.ssh/id_rsa
 fi
-cat ~/.ssh/id_rsa.pub | ssh $ip -p$port "[ -d ~/.ssh ] || mkdir ~/.ssh && cat >> ~/.ssh/authorized_keys"
+cat ~/.ssh/id_rsa.pub | ssh $ip -p$port "[ -d ~/.ssh ] || mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
 ssh $ip -p$port 'echo "Great Success!";  cat /etc/hosts| tail -n3  ' 
 }
  
@@ -382,7 +390,7 @@ fi
 
 thirdparty() {
 echo
-echo "Checking for 3rd party apps."
+echo "Checking for 3rd party apps..."
 #check for 3rd party stuff
 echo "Installing lwbake"
 ssh $ip -p$port "wget -O /scripts/lwbake http://layer3.liquidweb.com/scripts/lwbake;
@@ -390,12 +398,12 @@ chmod 700 /scripts/lwbake"
 #Check for ffmpeg
 if [ `which ffmpeg 2>1 /dev/null` ] ; then
  echo "Ffmpeg found, installing on new server..."
- ssh $ip -p$port " /scripts/lwbake ffmpeg-php "
+ ssh $ip -p$port "/scripts/lwbake ffmpeg-php "
 fi
 #Check for Imagemagick
 if [ `which convert 2>1 /dev/null` ] ; then 
  echo "Imagemagick found, installing on new server..."
- ssh $ip -p$port"
+ ssh $ip -p$port "
  /scripts/lwbake imagemagick
  /scripts/lwbake imagick
  /scripts/lwbake magickwand
@@ -426,7 +434,7 @@ postgresfound=`ps aux |grep -e 'postgres' |grep -v grep |tail -n1`
 mysqlcheck() {
 #mysql
 echo
-echo "Checking mysql version"
+echo "Checking mysql versions..."
 smysqlv=`grep -i mysql-version /var/cpanel/cpanel.config | cut -d= -f2`
 dmysqlv=`ssh $ip -p$port 'grep -i mysql-version /var/cpanel/cpanel.config | cut -d= -f2'`
 echo "Source: $smysqlv"
@@ -436,8 +444,10 @@ if [ $smysqlv == $dmysqlv ]; then
 else 
  echo "Mysql versions do not match."
  if yesNo "Update remote server's mysql version to $smysqlv?" ; then
+  #get remote php version now since mysql will now allow us to check later.
+  phpvr=`ssh $ip -p$port "php -v |head -n1 |cut -d\" \" -f2"`
   echo "Updating mysql..."
-  ssh $ip -p$port "sed -i.bak /mysql-version/d /var/cpanel/cpanel.config ; echo mysql-version=$smysqlv >> /var/cpanel/cpanel.config ; /scripts/mysqlup --force"
+  ssh $ip -p$port "sed -i.bak /mysql-version/d /var/cpanel/cpanel.config ; echo mysql-version=$smysqlv >> /var/cpanel/cpanel.config ; cp -rp /var/lib/mysql{,.bak} ; /scripts/mysqlup --force"
   echo "Mysql update completed, remember EA will need to be ran."
   mysqlupcheck=1
  else
@@ -447,10 +457,9 @@ fi
 sleep 1
 }
 
-upcpea() {
+upcp() {
 echo
-echo "Updating cpanel and easy apache functions."
-
+echo "Checking Cpanel versions..."
 #upcp if local version is higher than remote
 cpver=`cat /usr/local/cpanel/version`
 rcpver=`ssh $ip -p$port "cat /usr/local/cpanel/version"`
@@ -460,7 +469,6 @@ if  [[ $cpver > $rcpver ]]; then
  if yesNo "Run Upcp on remote server?" ; then
   echo "Running upcp..."
   ssh $ip -p$port "/scripts/upcp"
-  unset $mysqlupcheck
  else
   echo "Okay, fine, not running upcp." 
  fi
@@ -468,7 +476,11 @@ if  [[ $cpver > $rcpver ]]; then
  echo "Found a higher version of cpanel on remote server, carrying on."
 fi
 sleep 1
+}
 
+upea() {
+echo
+echo "Prepping for EasyApache..."
 #EA 
 #copy the EA config
 rsync -avHle "ssh -p$port" /var/cpanel/easy/apache/ $ip:/var/cpanel/easy/apache/
@@ -478,7 +490,10 @@ rsync -avHle "ssh -p$port" /var/cpanel/packages/ $ip:/var/cpanel/packages/
 rsync -avHle "ssh -p$port" /var/cpanel/features/ $ip:/var/cpanel/features/
 #find php versions to judge whether or not ea should be run
 phpv=`php -v |head -n1|cut -d" " -f2`
-phpvr=`ssh $ip -p$port "php -v |head -n1 |cut -d\" \" -f2"`
+#check if the var is set by the mysql function
+if ! [ $phpvr ]; then
+ phpvr=`ssh $ip -p$port "php -v |head -n1 |cut -d\" \" -f2"`
+fi
 if [[ $phpv < 5.3 ]];then 
  echo "If the php version should stay 5.2, you should manually run EA."
 fi
@@ -486,6 +501,7 @@ echo "Source: $phpv"
 echo "Dest: $phpvr"
 if yesNo "Want me to run EA on remote server?" ;then
  ssh $ip -p$port "/scripts/easyapache --build"
+ unset mysqlupcheck
 else
  echo 'Just trying to help :/'
  skippedea=1
@@ -502,13 +518,17 @@ echo $userlist > /root/userlist.txt
 > $dnr
 mainip=`grep ADDR /etc/wwwacct.conf | awk '{print $2}'`
 for user in $userlist; do 
- userip=`grep IP /var/cpanel/users/$user|cut -d '=' -f2`
+ userip=`grep ^IP= /var/cpanel/users/$user|cut -d '=' -f2`
  /scripts/pkgacct --skiphomedir $user 
  rsync -avHlPe "ssh -p$port" /home*/cpmove-$user.tar.gz $ip:/home 
 #check for not enough ips
+ echo "main ip:$mainip"
+ echo "user ip:$userip"
+ echo "ipcheck: $ipcheck"
+# read
  if [[ $ipcheck = 1 ]] ; then
  #restore to dedicated ips
-  ssh $ip -p$port "mkdir /home/temp; 
+  ssh $ip -p$port "mkdir -p /home/temp; 
   mv /home/cpmove-$user.tar.gz /home/temp/;
   if [[ $userip != $mainip ]]; then 
    /scripts/restorepkg --ip=y /home/temp/cpmove-$user.tar.gz ; 
@@ -518,7 +538,7 @@ for user in $userlist; do
   mv /home/temp/cpmove-$user.tar.gz /home/" 
  else
  #restore everything to main ip
-  ssh $ip -p$port "mkdir /home/temp; 
+  ssh $ip -p$port "mkdir -p /home/temp; 
   mv /home/cpmove-$user.tar.gz /home/temp/;
   /scripts/restorepkg /home/temp/cpmove-$user.tar.gz ; 
   mv /home/temp/cpmove-$user.tar.gz /home/" 
@@ -557,14 +577,14 @@ finalchecks() {
 echo
 echo "===Final Checks==="
 #3rdparty stuff
-if [ "$xcachefound $eaccelfound $nginxfound $postgresfound" ]; then
+if [ "${xcachefound}${eaccelfound}${nginxfound}${postgresfound}" ]; then
 echo 'Install any found 3rd party stuff on the new server!'
 [ "$xcachefound" ] && echo "Xcache: $xcachefound"
 [ "$eaccelfound" ] && echo "Eaccelerator: $eaccelfound"
 [ "$nginxfound" ] && echo "Nginx: $nginxfound"
 [ "$postgresfound" ] && echo "Postgres: $postgresfound"
 #pause here
-
+sleep 3
 fi
 
 #phpapicheck
@@ -578,11 +598,29 @@ if [ $phpmemcheck ]; then
 fi
 
 #if ea was skipped, show reminder
-if [ $skippedea $mysqlupcheck ]; then
+if [ "${skippedea}${mysqlupcheck}" ]; then
  
  echo 'Remeber to run EasyApache on new server! (press enter to continue)'
  read
 fi
+
+if [ -s /etc/remotedomains ]; then
+ echo 'Domains found in /etc/remotedomains, double check their mx settings!'
+ cat /etc/remotedomains
+ echo 'Press enter to continue...'
+ read
+fi
+
+#check for alternate exim ports
+eximcheck=`grep ^daemon_smtp_ports /etc/exim.conf`
+eximexpect="daemon_smtp_ports = 25 : 465"
+if [ "$eximcheck" != "$eximexpect" ]; then
+ echo 'Alternate smtp ports found!'
+ echo $eximcheck
+ echo 'Set them up within WHM on the new server. (enter to continue)'
+ read
+fi
+ 
 echo "===End Final Checks==="
 echo "Enter to continue"
 read
@@ -597,24 +635,36 @@ echo "Running final sync..."
 if [ -s /root/userlist.txt ]; then 
  echo "Found /root/userlist.txt, using as userlist"
  userlist=`cat /root/userlist.txt`
+ echo "$userlist"
 else
  echo "Syncing all users."
  userlist=`/bin/ls -A /var/cpanel/users`
+ echo "$userlist"
 fi
 sleep 3
 getip
+
+if yesNo 'Stop services for final sync?'; then
+ stopservices=1
+fi
+
 echo "Press enter to begin final sync..."
 read
+
+if [ $stopservices ]; then
 echo "Stopping Services..."
 /etc/init.d/chkservd stop
 /usr/local/cpanel/bin/tailwatchd --disable=Cpanel::TailWatch::ChkServd
 /etc/init.d/httpd stop
 /etc/init.d/exim stop
 /etc/init.d/cpanel stop
+else
+ echo "Not stopping services."
+fi
 
 echo "Dumping the databases..."
 test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%T`.bak}
-mkdir /home/dbdumps
+mkdir -p /home/dbdumps
 ssh $ip -p$port 'test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%T`.bak} '
 for each in $userlist; do 
   for db in `mysql -e 'show databases' | grep "^$each\_"`; do 
@@ -648,25 +698,28 @@ rsync -ave "ssh -p$port" /var/spool $ip:/var/
 
 
 #restart services
+if [ $stopservices ]; then
+echo "Restarting services..."
 /etc/init.d/chkservd start
 /etc/init.d/httpd start
 /etc/init.d/mysql start
 /etc/init.d/exim start
 /etc/init.d/cpanel start
 /usr/local/cpanel/bin/tailwatchd --enable=Cpanel::TailWatch::ChkServd
+fi
 
 #give cpanel time to spam to screen
 sleep 10
-
+echo
 #display mysqldump errors
 if [ -s /tmp/mysqldump.log ]; then
  echo 
  echo 'Errors detected during mysqldumps:'
  cat /tmp/mysqldump.log
- echo
+ echo "End of errors from /tmp/mysqldump.log."
  sleep 1
 fi
-
+echo
 echo 'Final sync complete, check the screen "dbdumps" on the remote server to ensure all databases imported correctly.'
 }
 
