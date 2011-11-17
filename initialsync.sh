@@ -1,17 +1,18 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Nov15 2011"
+ver="Nov17 2011"
 #todo: 
 # match other php vars?   
 # php open_basedir
 # add home2 support, (grep etc passwd for user home)
-# check for ffmpeg, etc, on new server if found on old to avoid reinstalling
 # add -t -n to ssh to make it quiet
 # install postgres if found on old 
 # copy apf/csf allow configs?
 # copy modsec configs? or at least display it.
 # verify all users against current users for final sync.
 #modsec rules
+# check for dns clustering, the folder /var/cpanel/cluster will exist. http://www.thecpaneladmin.com/cpanel-command-line-dns-cluster-management/
+#check for remote mysql server, /root/.my.cnf
 
 #userlist=`/bin/ls -A /var/cpanel/users`
 dnr=/home/didnotrestore.txt
@@ -51,6 +52,7 @@ echo "Select the migration type:
 2) Basic sync (all users, no version matching) 
 3) Single user sync (no version matching)
 4) User list sync (no version matching)
+5) Full sync - keeping old ips (/etc/ips is copied over)
 9) Final sync (from /root/userlist.txt or all users)
 0) Quit"
 }
@@ -76,6 +78,9 @@ while [ $mainloop == 0 ] ; do
  4)
   listsync
   mainloop=1   ;;
+ 5)
+  keepipsync
+  mainloop=1 ;;
  9)
   finalsync
   mainloop=1 ;;
@@ -87,11 +92,14 @@ while [ $mainloop == 0 ] ; do
 done
 echo
 echo "Started at $starttime"
+echo "Sync started at $syncstarttime"
+echo "Sync finished at $syncendtime"
 echo "Finished at `date +%F.%T`"
 echo 'Done!'
 exit 0
 }
 
+#sync types
 singleuser() {
 echo
 echo "Single user sync."
@@ -103,11 +111,10 @@ while [ $singleuserloop == 0 ]; do
  sucheck=`/bin/ls -A /var/cpanel/users | grep ^${userlist}$`
  if  [[ $sucheck = $userlist ]]; then
   echo "Found $userlist, restoring..."
-  basicsync 
   singleuserloop=1
+  basicsync
  else
   echo "Could not find $userlist."
-  
  fi
 done
 }
@@ -142,44 +149,61 @@ fi
 basicsync(){
 echo
 echo "Basic Sync started"
-dnrcheck
-dnscheck
-lowerttls
-getip
-accountcheck
-dedipcheck
-acctcopy
-didntrestore
-hostsgen
+presync
+copyaccounts
 }
-
 
 fullsync() {
 echo
 echo "Full sync started"
 #check versions,  run ea, upcp, match php versions, lots of good stuff
-dnrcheck     #userlist is defined here
+presync
+versionmatching
+copyaccounts
+}
+
+keepipsync() {
+echo
+echo "Sync keeping old dedicated ips."
+keepoldips=1
+fullsync
+}
+
+#Main sync procecures
+presync() {
+echo "Running Pre-sync functions..."
+#get ips and such
+if ! [ $singleuserloop ];then 
+ dnrcheck     #userlist is defined here
+fi
 dnscheck     #lets you view current dns
 lowerttls    
 getip        #asks for ip or checks a file to confirm destination
 accountcheck #if conflicting accounts are found, asks
 dedipcheck  #asks if an equal amount of ips are not found
+}
+versionmatching() {
+echo "Running version matching..."
 upcp
 phpmemcheck 
 thirdparty   
 mysqlcheck 
 upea
 phpapicheck  # to be ran after ea so php4 can be compiled in if needed
+}
+copyaccounts() {
+echo "Starting account copying functions..."
 acctcopy
 didntrestore
 hostsgen       #halts
 finalchecks
 }
+##
 
 dnrcheck() { 
 #define users
 #check and suggest to restore accounts from a previous failed migration
-#dnrusers is defined at teh start
+#dnrusers is defined at the start
 echo
 echo "Checking for previous failed migration."
 if [ "$dnrusers" ];then
@@ -256,6 +280,7 @@ if [ -f $ipfile ]; then
  echo
  if yesNo "Is $ip the server you want? Check above output for a successful connection.  Otherwise enter No to input new ip." ;then
   echo "Ok, continuing with $ip"
+  sshkeygen
  else
   ipask 
  fi
@@ -283,7 +308,6 @@ if [ -s /root/dest.port.txt ]; then
 else 
  echo -n "SSH Port [22]: "
  read port
-
 fi
 if [ -z $port ]; then
  echo "No port given, assuming 22"
@@ -300,8 +324,8 @@ echo "Generating SSH keys"
 if ! [ -f ~/.ssh/id_rsa ]; then
  ssh-keygen -q -N "" -t rsa -f ~/.ssh/id_rsa
 fi
-cat ~/.ssh/id_rsa.pub | ssh $ip -p$port "[ -d ~/.ssh ] || mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
-ssh $ip -p$port 'echo "Great Success!";  cat /etc/hosts| tail -n3  ' 
+cat ~/.ssh/id_rsa.pub | ssh $ip -p$port "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
+ssh $ip -p$port "echo \'Connected!\';  cat /etc/hosts| grep $ip " 
 }
  
 
@@ -325,8 +349,14 @@ fi
 dedipcheck() { #check for same amount of dedicated ips
 echo
 echo "Checking for dedicated Ips."
-sourceipcount=`cat /etc/ips | wc -l`
-destipcount=`ssh $ip -p$port "cat /etc/ips | wc -l"`
+if [ $keepoldips ];then 
+ echo "Keeping old ips, copying ips file over."
+ ssh $ip -p$port "cp -rp /etc/ips{,.bak}"
+ rsync -avHPe "ssh -p${port}" /etc/ips $ip:/etc/
+ ssh $ip -p$port "/etc/init.d/ipaliases restart"
+fi
+sourceipcount=`cat /etc/ips | grep ^[0-9] | wc -l`
+destipcount=`ssh $ip -p$port "cat /etc/ips |grep ^[0-9] | wc -l"`
 if (( $sourceipcount <= $destipcount ));then
  echo "Source server has less or equal ips compared to destination, continuing."
  ipcheck=1
@@ -512,6 +542,7 @@ sleep 1
 acctcopy() {
 echo
 echo "Packaging cpanel accounts and restoring on remote server..."
+syncstarttime=`date +%F.%T`
 #backup userlist variable
 echo $userlist > /root/userlist.txt
 #pack/send restore loop
@@ -525,29 +556,44 @@ for user in $userlist; do
  echo "main ip:$mainip"
  echo "user ip:$userip"
  echo "ipcheck: $ipcheck"
-# read
- if [[ $ipcheck = 1 ]] ; then
- #restore to dedicated ips
+
+#If keeping old ips.
+ if [[ $keepoldips ]]; then
   ssh $ip -p$port "mkdir -p /home/temp; 
   mv /home/cpmove-$user.tar.gz /home/temp/;
   if [[ $userip != $mainip ]]; then 
-   /scripts/restorepkg --ip=y /home/temp/cpmove-$user.tar.gz ; 
+   /scripts/restorepkg --ip=$userip /home/temp/cpmove-$user.tar.gz ; 
   else
    /scripts/restorepkg /home/temp/cpmove-$user.tar.gz ; 
   fi
   mv /home/temp/cpmove-$user.tar.gz /home/" 
+  
  else
- #restore everything to main ip
-  ssh $ip -p$port "mkdir -p /home/temp; 
-  mv /home/cpmove-$user.tar.gz /home/temp/;
-  /scripts/restorepkg /home/temp/cpmove-$user.tar.gz ; 
-  mv /home/temp/cpmove-$user.tar.gz /home/" 
+  #normal restore
+  if [[ $ipcheck = 1 ]] ; then
+  #restore to dedicated ips
+   ssh $ip -p$port "mkdir -p /home/temp; 
+   mv /home/cpmove-$user.tar.gz /home/temp/;
+   if [[ $userip != $mainip ]]; then 
+    /scripts/restorepkg --ip=y /home/temp/cpmove-$user.tar.gz ; 
+   else
+    /scripts/restorepkg /home/temp/cpmove-$user.tar.gz ; 
+   fi
+   mv /home/temp/cpmove-$user.tar.gz /home/" 
+  else
+   #restore everything to main ip
+   ssh $ip -p$port "mkdir -p /home/temp; 
+   mv /home/cpmove-$user.tar.gz /home/temp/;
+   /scripts/restorepkg /home/temp/cpmove-$user.tar.gz ; 
+   mv /home/temp/cpmove-$user.tar.gz /home/" 
+  fi
  fi
  
 #make sure user restored, rsync homedir
  rsynchomedirs
  
 done  
+syncendtime=`date +%F.%T`
 }
 
 rsynchomedirs() { #to be ran inside of a for user in userlist loop
