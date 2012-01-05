@@ -1,0 +1,7 @@
+#Changelog since dec19th###########
+# Dec19 mysqldbfinalsync, added more logging to /tmp/mysqldump.log so it would show database names. want to add a db only sync.
+# Dec 25 simplified single user sync
+# Dec 26 Added "actions taken" to end of final sync.
+# Jan 4 2012 added updating rsync to greater than 3, and logging for rsync/ found rsync loggin wiht --log-file isn't that useful actually :/  probably will want to log output of --stats but it adds the same output as -v
+# added scriptlog for version, start, choice, end times.
+

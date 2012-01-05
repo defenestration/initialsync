@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Dec 8 2011"
+ver="Jan 4 2012"
 #todo: 
 # copy modsec configs? or at least display it.
 # make ssh have quieter output? tried and failed before though.
@@ -10,22 +10,37 @@ ver="Dec 8 2011"
 # streamline initial choice logic
 # ssl cert status -expired or not
 # get domains associated with users, for copying over zone files from new server. lower TTls only for domains that are migrating?
+# check for extra mysql databases
 # check for remote mysql server, /root/.my.cnf, check for blank /etc/my.cnf, check for mysql moved to /home/
+
 
 # Finalchecks:
 # check for dns clustering on source server, so the migrator is aware of it.
 # run expect on rebuildphpconf to make sure it installed correctly.
 # automatically open ports for exim, apf IG_TCP_CPORTS ,csf TCP_IN
 # copy apf/csf allow configs?
+# show failed users after hosts and checks and apps 
+
+#Changelog ###########
+# Dec19 mysqldbfinalsync, added more logging to /tmp/mysqldump.log so it would show database names. want to add a db only sync.
+# Dec 25 simplified single user sync
+# Dec 26 Added "actions taken" to end of final sync.
+# Jan 4 2012 added updating rsync to greater than 3, and logging for rsync/ found rsync loggin wiht --log-file isn't that useful actually :/  probably will want to log output of --stats but it adds the same output as -v
+# added scriptlog for version, start, choice, end times.
 
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
+scriptlog=/tmp/initialsync.log
 dnr=/home/didnotrestore.txt
 [ -s $dnr ] && dnrusers=`cat $dnr`
 #for home2 
 > /tmp/remotefail.txt
 > /tmp/localfail.txt
+> /tmp/migration.rsync.log
+touch $scriptlog
+echo "Version $ver" >> $scriptlog
+echo "Started $starttime" >> $scriptlog
 
 yesNo() { #generic yesNo function
 #repeat if yes or no option not valid
@@ -51,7 +66,7 @@ done
 #fi
 }
 
-menutext(){
+menutext() {
 echo "Version: $ver"
 echo "Main Menu:
 Select the migration type:
@@ -60,6 +75,7 @@ Select the migration type:
 3) Single user sync (no version matching)
 4) User list sync (from /root/userlist.txt, no version matching)
 5) Full sync - keeping old ips (/etc/ips is copied over)
+8) Database sync - only sync databases for cpanel users.
 9) Final sync (from /root/userlist.txt or all users)
 0) Quit"
 }
@@ -88,6 +104,9 @@ while [ $mainloop == 0 ] ; do
  5)
   keepipsync
   mainloop=1 ;;
+ 8) 
+  echo "Not working yet" 
+  sleep 3 ;;
  9)
   finalsync
   mainloop=1 ;;
@@ -99,9 +118,9 @@ while [ $mainloop == 0 ] ; do
 done
 echo
 echo "Started at $starttime"
-echo "Sync started at $syncstarttime"
-echo "Sync finished at $syncendtime"
-echo "Finished at `date +%F.%T`"
+echo "Sync started at $syncstarttime" |tee -a $scriptlog
+echo "Sync finished at $syncendtime" |tee -a $scriptlog
+echo "Finished at `date +%F.%T`" | tee -a $scriptlog
 echo 'Done!'
 exit 0
 }
@@ -109,7 +128,7 @@ exit 0
 #sync types
 singleuser() {
 echo
-echo "Single user sync."
+echo "Single user sync." | tee -a $scriptlog
 singleuserloop=0
 while [ $singleuserloop == 0 ]; do 
  echo -n "Input name of the user to migrate:"
@@ -119,7 +138,12 @@ while [ $singleuserloop == 0 ]; do
  if  [[ $sucheck = $userlist ]]; then
   echo "Found $userlist, restoring..."
   singleuserloop=1
-  basicsync
+  rsyncupgrade
+  getip        #asks for ip or checks a file to confirm destination
+  accountcheck #if conflicting accounts are found, asks
+  acctcopy
+  didntrestore
+
  else
   echo "Could not find $userlist."
  fi
@@ -128,7 +152,7 @@ done
 
 listsync() {
 echo
-echo "List sync."
+echo "List sync." | tee -a $scriptlog
 listsyncvar=1
 #search for /root/users.txt and /home/users.txt
 if [ -s /root/userlist.txt ]; then
@@ -156,14 +180,14 @@ fi
 
 basicsync(){
 echo
-echo "Basic Sync started"
+echo "Basic Sync started" |tee -a $scriptlog
 presync
 copyaccounts
 }
 
 fullsync() {
 echo
-echo "Full sync started"
+echo "Full sync started" |tee -a $scriptlog
 #check versions,  run ea, upcp, match php versions, lots of good stuff
 presync
 versionmatching
@@ -172,19 +196,20 @@ copyaccounts
 
 keepipsync() {
 echo
-echo "Sync keeping old dedicated ips."
+echo "Sync keeping old dedicated ips." |tee -a $scriptlog
 keepoldips=1
 fullsync
 }
 
 #Main sync procecures
 presync() {
-echo "Running Pre-sync functions..."
+echo "Running Pre-sync functions..." |tee -a $scriptlog
 #get ips and such
 if ! [ "${singleuserloop}${listsyncvar}" ];then 
  dnrcheck     #userlist is defined here
 fi
 dnscheck     #lets you view current dns
+rsyncupgrade
 lowerttls    
 getip        #asks for ip or checks a file to confirm destination
 accountcheck #if conflicting accounts are found, asks
@@ -193,7 +218,7 @@ dedipcheck  #asks if an equal amount of ips are not found
 
 versionmatching() {
 #only full syncs
-echo "Running version matching..."
+echo "Running version matching..." |tee -a $scriptlog
 nameservers
 upcp
 phpmemcheck 
@@ -205,10 +230,11 @@ phpapicheck  # to be ran after ea so php4 can be compiled in if needed
 }
 
 copyaccounts() {
-echo "Starting account copying functions..."
+echo "Starting account copying functions..." |tee -a $scriptlog
 acctcopy
 didntrestore
 hostsgen  
+mysqlextradbcheck
 mysqldumpinitialsync
 finalchecks
 }
@@ -218,7 +244,7 @@ dnrcheck() {
 #check and suggest to restore accounts from a previous failed migration
 #dnrusers is defined at the start
 echo
-echo "Checking for previous failed migration."
+echo "Checking for previous failed migration." 
 if [ "$dnrusers" ];then
  echo
  echo "Found users from failed migration in $dnr"
@@ -257,7 +283,7 @@ sleep 2
 
 hostsgen() {
 echo
-echo "Generating sample for hosts file..."
+echo "Generating sample for hosts file..." 
 echo
 ssh $ip -p$port "wget -O /scripts/hosts.sh http://migration.sysres.liquidweb.com/hosts.sh ; bash /scripts/hosts.sh" 
 echo 
@@ -395,7 +421,7 @@ else
  /scripts/ipusage
  echo 
  echo "Not enough dedicated IPs found on destination server ($destipcount) when compared to source server ($sourceipcount)."
- echo "If you are sure the server isn't using all its IPs for accounts you can override the Ip check. Otherwise answer No to put all sites on the main shared IP."
+ echo "If you are sure the server isn't using all its IPs for accounts you can override the Ip check by answering Yes. Otherwise answer No to put all sites on the main shared IP."
  if yesNo "Override IP check?" ;then
   ipcheck=1
   echo "Restoring to dedicated ips."
@@ -523,7 +549,36 @@ fi
 sleep 1
 }
 
+mysqlextradbcheck() { #find dbs created outside of cpanel, with potential to copy them over.
+#skip this fucntion if the username prefix is disabled.
+if ! [ $(grep database /var/cpanel/cpanel.config) = "database_prefix=0" ]; then
+ echo
+ echo "Checking for extra mysql databases..."
+ mkdir -p /home/temp/
+ mysql -e 'show databases' |grep -v ^cphulkd |grep -v ^information_schema |grep -v ^eximstats |grep -v ^horde | grep -v leechprotect |grep -v ^modsec |grep -v ^mysql |grep -v ^roundcube |grep -v ^Database > /home/temp/dblist.txt
+#still have user_ databases, filter those.
+ cp -rp /home/temp/dblist.txt /home/temp/extradbs.txt
+ #get all users here, not userlist.
+ for user in `/bin/ls -A /var/cpanel/users`; do 
+  sed -i -e "/^$user\_/d" /home/temp/extradbs.txt
+ done
+ #check for non zero filesize
+ if [ -s /home/temp/extradbs.txt ];then 
+  echo "Extra databases Detected (/home/temp/extradbs.txt):"
+  cat /home/temp/extradbs.txt |more 
+  #offer to migrate
+  if yesNo 'Copy these databases to the new server? (adds to /root/dblist.txt)' ; then
+   cat /home/temp/extradbs.txt >> /root/dblist.txt
+  fi
+ fi
 
+else
+ echo
+ echo "Detected user database prefixing is disabled in WHM.  Might want to set this up on the new server, accounts should migrate fine though."
+ echo "Enter to continue..."
+ read
+fi
+}
 
 upcp() {
 echo
@@ -751,8 +806,8 @@ if [ "$user" == "$ruser" ]; then
 #check for non-empty vars
  if [ $userhomelocal ]; then
   if [ $userhomeremote ]; then
-   echo "Syncing Home directory for $user. $userhomelocal to ${ip}:${userhomeremote}."
-   rsync -avqHle "ssh -p$port" ${userhomelocal}/ ${ip}:${userhomeremote}/
+   echo "Syncing Home directory for $user. $userhomelocal to ${ip}:${userhomeremote}, please wait..."
+   rsync -aqHle  "ssh -p$port" ${userhomelocal}/ ${ip}:${userhomeremote}/
   else
    #remote fails
    echo "Remote path for $user not found."
@@ -860,8 +915,8 @@ read
 
 mysqldumpinitialsync() {
 echo
-echo "Checking for extra databases to dump..."
 if [ -s /root/dblist.txt ]; then
+ echo "Found extra databases to dump..."
  for db in `cat /root/dblist.txt`; do 
   mysqldumpfunction
   ssh $ip -p$port "mysqladmin create $db"
@@ -876,9 +931,35 @@ else
 fi
 
 }
+mysqldbfinalsync() {
+echo "Dumping the databases..."
+test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%T`.bak}
+mkdir -p /home/dbdumps
+ssh $ip -p$port 'test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%T`.bak}'
+mysqldumpver=`mysqldump --version |cut -d" " -f6 |cut -d, -f1`
+#dump user dbs
+for each in $userlist; do 
+  for db in `mysql -e 'show databases' | grep "^$each\_"`; do 
+   mysqldumpfunction
+ done  
+done
+#dump from list of dbs
+if [ -s /root/dblist.txt ]; then
+ for db in `cat /root/dblist.txt`; do 
+  mysqldumpfunction
+ done
+fi
+
+#copy dbs over
+rsync --progress -avHlze "ssh -p$port" /home/dbdumps $ip:/home/
+
+#dbsyncin screen madness
+ssh $ip -p$port "wget migration.sysres.liquidweb.com/dbsync.sh -O /scripts/dbsync.sh; screen -S dbsync -d -m bash /scripts/dbsync.sh" &
+}
+
 mysqldumpfunction() {
 #should be run inside a loop, where db is your database name
-echo "Dumping $db"; 
+echo "Dumping $db" | tee -a /tmp/mysqldump.log; 
 #mysqldump log-error doesn't work for versions less than 5.0.42 
 if [[ $mysqldumpver < 5.0.42 ]]; then 
  mysqldump --add-drop-table $db > /home/dbdumps/$db.sql
@@ -889,7 +970,7 @@ fi
 
 finalsync() {
 echo
-echo "Running final sync..."
+echo "Running final sync..." |tee -a $scriptlog
 
 #check for previous migration
 if [ -s /root/userlist.txt ]; then 
@@ -922,7 +1003,7 @@ syncstarttime=`date +%F.%T`
 
 if [ $stopservices ]; then
 echo "Stopping Services..."
-/etc/init.d/chkservd stop
+[ -s /etc/init.d/chkservd ] && /etc/init.d/chkservd stop
 /usr/local/cpanel/bin/tailwatchd --disable=Cpanel::TailWatch::ChkServd
 /etc/init.d/httpd stop
 /etc/init.d/exim stop
@@ -931,29 +1012,7 @@ else
  echo "Not stopping services."
 fi
 
-echo "Dumping the databases..."
-test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%T`.bak}
-mkdir -p /home/dbdumps
-ssh $ip -p$port 'test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%T`.bak} '
-mysqldumpver=`mysqldump --version |cut -d" " -f6 |cut -d, -f1`
-#dump user dbs
-for each in $userlist; do 
-  for db in `mysql -e 'show databases' | grep "^$each\_"`; do 
-   mysqldumpfunction
- done  
-done
-#dump from list of dbs
-if [ -s /root/dblist.txt ]; then
- for db in `cat /root/dblist.txt`; do 
-  mysqldumpfunction
- done
-fi
-
-#copy dbs over
-rsync --progress -avHlze "ssh -p$port" /home/dbdumps $ip:/home/
-
-#dbsyncin screen madness
-ssh $ip -p$port "wget migration.sysres.liquidweb.com/dbsync.sh -O /scripts/dbsync.sh; screen -S dbsync -d -m bash /scripts/dbsync.sh" &
+mysqldbfinalsync
 
 for user in $userlist; do 
  rsynchomedirs
@@ -978,7 +1037,7 @@ fi
 #restart services
 if [ $restartservices ]; then
  echo "Restarting services..."
- /etc/init.d/chkservd start
+ [ -s /etc/init.d/chkservd ] && /etc/init.d/chkservd start
  /etc/init.d/httpd start
  /etc/init.d/mysql start
  /etc/init.d/exim start
@@ -1002,19 +1061,43 @@ if [ -s /tmp/mysqldump.log ]; then
  echo "End of errors from /tmp/mysqldump.log."
  sleep 1
 fi
-echo
+
+echo "=Actions taken:="
+if [ $stopservices ]; then 
+ echo "Stopped services"
+ if [ $restartservices ];then echo "Restarted services"; else echo "Didnt restart services"; fi
+fi
+[ $copydns ] && echo "DNS was copied over from new server."
+
 echo 'Final sync complete, check the screen "dbdumps" on the remote server to ensure all databases imported correctly.'
 }
 
-finalfixes(){
+finalfixes() {
 #in final sync and initial sync
 #fix mail permissisons
 echo "Fixing mail permissions on new server."
-ssh $ip -p$port "/scripts/mailperm"
+ssh $ip -p$port "screen -S mailperm -d -m /scripts/mailperm" &
 
 #fix quotas
 echo "Starting a screen to fix cpanel quotas."
-ssh $ip -p$port "screen -S fixquotas -d -m /scripts/fixquotas"
+ssh $ip -p$port "screen -S fixquotas -d -m /scripts/fixquotas" &
+}
+
+rsyncupgrade () {
+#Optional function to upgrade rsync to V 3.0
+#rsync 3+ supports the --log-file option
+#get current rsync version
+RSYNCVERSION=`rsync --version |head -n1 |awk '{print $3}'`
+if [ "$RSYNCVERSION" < 3.0 ]; then
+ echo "Updating rsync..."
+ LOCALCENT=`cat /etc/redhat-release |awk '{print $3}'|cut -d '.' -f1`
+ LOCALARCH=`uname -i`
+ rpm -Uvh http://migration.sysres.liquidweb.com//rsync/rsync-3.0.0-1.el$LOCALCENT.rf.$LOCALARCH.rpm
+fi
+
+#REMOTECENT=`ssh -p$PORT $USER@$IP "cat /etc/redhat-release" |awk '{print $3}'|cut -d '.' -f1`
+#REMOTEARCH=`ssh -p$PORT $USER@$IP "uname -i"`
+#       ssh -p$PORT $USER@$IP "rpm -Uvh http://migration.sysres.liquidweb.com/rsync/rsync-3.0.0-1.el$REMOTECENT.rf.$REMOTEARCH.rpm"
 }
 
 main
