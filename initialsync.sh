@@ -1,21 +1,17 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Jan 4 2012"
+ver="Jan 17 2012"
 #todo: 
 # copy modsec configs? or at least display it.
 # make ssh have quieter output? tried and failed before though.
 
 # Presync:
-# check for dns clustering, the folder /var/cpanel/cluster will exist. http://www.thecpaneladmin.com/cpanel-command-line-dns-cluster-management/ check on  new server, as we don't want to migrate in this case since dns will probably automatically update.
 # streamline initial choice logic
 # ssl cert status -expired or not
 # get domains associated with users, for copying over zone files from new server. lower TTls only for domains that are migrating?
-# check for extra mysql databases
 # check for remote mysql server, /root/.my.cnf, check for blank /etc/my.cnf, check for mysql moved to /home/
 
-
 # Finalchecks:
-# check for dns clustering on source server, so the migrator is aware of it.
 # run expect on rebuildphpconf to make sure it installed correctly.
 # automatically open ports for exim, apf IG_TCP_CPORTS ,csf TCP_IN
 # copy apf/csf allow configs?
@@ -27,7 +23,14 @@ ver="Jan 4 2012"
 # Dec 26 Added "actions taken" to end of final sync.
 # Jan 4 2012 added updating rsync to greater than 3, and logging for rsync/ found rsync loggin wiht --log-file isn't that useful actually :/  probably will want to log output of --stats but it adds the same output as -v
 # added scriptlog for version, start, choice, end times.
-
+# Jan 5 fixed rsync version comapre string
+# Jan 8 2011 wrapped variable in if statement in quotes in mysqlextradbcheck
+#  added rsync upgrade to final sync
+#  added apacheprepostcheck function to presync
+# Jan 16 2011 - implemented dbsync function.
+#  Added dnsclustercheck function.
+#  Tweaked apacheprepostcheck to print file contents and backup the conf file before copying.
+# Jan 17 2011 - Fixed mysqlup so mysql actually updates.
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
@@ -105,8 +108,8 @@ while [ $mainloop == 0 ] ; do
   keepipsync
   mainloop=1 ;;
  8) 
-  echo "Not working yet" 
-  sleep 3 ;;
+  dbsync
+  mainloop=1 ;;
  9)
   finalsync
   mainloop=1 ;;
@@ -116,15 +119,22 @@ while [ $mainloop == 0 ] ; do
    echo "Not a valid choice. Also, the game."; sleep 2 ; clear 
  esac
 done
+sleep 3
 echo
 echo "Started at $starttime"
-echo "Sync started at $syncstarttime" |tee -a $scriptlog
-echo "Sync finished at $syncendtime" |tee -a $scriptlog
+[ $syncstarttime ] && echo "Sync started at $syncstarttime" |tee -a $scriptlog
+[ $syncendtime ] &&  echo "Sync finished at $syncendtime" |tee -a $scriptlog
 echo "Finished at `date +%F.%T`" | tee -a $scriptlog
 echo 'Done!'
 exit 0
 }
 
+dbsync() {
+echo "Database only sync." |tee -a $scriptlog
+userlist=`/bin/ls -A /var/cpanel/users`
+getip        #asks for ip or checks a file to confirm destination
+mysqldbfinalsync
+}
 #sync types
 singleuser() {
 echo
@@ -212,6 +222,7 @@ dnscheck     #lets you view current dns
 rsyncupgrade
 lowerttls    
 getip        #asks for ip or checks a file to confirm destination
+dnsclustercheck
 accountcheck #if conflicting accounts are found, asks
 dedipcheck  #asks if an equal amount of ips are not found
 }
@@ -221,8 +232,9 @@ versionmatching() {
 echo "Running version matching..." |tee -a $scriptlog
 nameservers
 upcp
+apacheprepostcheck
 phpmemcheck 
-thirdparty   
+thirdparty
 mysqlcheck 
 upea
 installprogs
@@ -233,10 +245,10 @@ copyaccounts() {
 echo "Starting account copying functions..." |tee -a $scriptlog
 acctcopy
 didntrestore
-hostsgen  
 mysqlextradbcheck
 mysqldumpinitialsync
 finalchecks
+hostsgen
 }
 
 dnrcheck() { 
@@ -283,16 +295,36 @@ sleep 2
 
 hostsgen() {
 echo
-echo "Generating sample for hosts file..." 
+echo "Generating hosts file..." 
 echo
 ssh $ip -p$port "wget -O /scripts/hosts.sh http://migration.sysres.liquidweb.com/hosts.sh ; bash /scripts/hosts.sh" 
 echo 
 sleep 2
 }
 
+dnsclustercheck() {
+echo 
+echo "Checking for DNS clustering..." |tee -a $scriptlog
+if [ -d /var/cpanel/cluster ]; then
+ echo 'Local DNS Clustering found!' |tee -a $scriptlog
+ localcluster=1
+fi
+remotednscluster=`ssh -p$port $ip "if [ -d /var/cpanel/cluster ]; then echo \"Remote DNS Clustering found.\" ; fi" `
+if [ $remotednscluster ]; then
+ echo
+ echo "Remote DNS clustering is detected, you shouldn't continue since restoring accounts has the potential to automatically update DNS for them in the cluster. Probably will be better to remove the remote server from the cluster before continuing." |tee -a $scriptlog
+ if yesNo 'Do you want to continue?'; then
+  echo "Continuing..." |tee -a $scriptlog
+ else
+  exit 0
+ fi
+fi
+
+}
+
 dnscheck() {
 echo
-echo "Checking Current dns..."
+echo "Checking Current dns..." |tee -a $scriptlog
 if [ -f /root/dns.txt ]; then
  echo "Found /root/dns.txt"
  sleep 3
@@ -308,7 +340,7 @@ read
 
 lowerttls() {
 echo
-echo "Lowering TTLs..."
+echo "Lowering TTLs..." |tee -a $scriptlog
 #lower ttls
 sed -i.lwbak -e 's/^\$TTL.*/$TTL 300/g' -e 's/[0-9]\{10\}/'`date +%Y%m%d%H`'/g' /var/named/*.db
 rndc reload
@@ -316,13 +348,13 @@ rndc reload
 
 getip() {
 echo
-echo "Getting Ip for destination server..."
+echo "Getting Ip for destination server..." |tee -a $scriptlog
 #check for previous migration, just in case.
 ipfile=/root/dest.ip.txt
 if [ -f $ipfile ]; then
  ip=`cat $ipfile`
  echo
- echo "Ip from previous migration found `echo $ip`" 
+ echo "Ip from previous migration found `echo $ip`"  
  getport
  echo "Testing connetion to remote server..."
  echo
@@ -354,7 +386,7 @@ sshkeygen
 
 getport() {
 echo
-echo "Getting ssh port."
+echo "Getting ssh port." |tee -a $scriptlog
 if [ -s /root/dest.port.txt ]; then
  port=`cat /root/dest.port.txt`
  echo "Previous Ssh port found ($port)."
@@ -373,7 +405,7 @@ sleep 1
 
 sshkeygen() {
 echo
-echo "Generating SSH keys"
+echo "Generating SSH keys" |tee -a $scriptlog
 if ! [ -f ~/.ssh/id_rsa ]; then
  ssh-keygen -q -N "" -t rsa -f ~/.ssh/id_rsa
 fi
@@ -384,7 +416,7 @@ ssh $ip -p$port "echo \'Connected!\';  cat /etc/hosts| grep $ip "
 
 accountcheck() { #check for users with the same name on each server:
 echo
-echo "Comparing accounts with destination server"
+echo "Comparing accounts with destination server" |tee -a $scriptlog
 for user in $userlist ; do ssh -qt $ip -p$port " if [ -f /var/cpanel/users/$user ]; then echo $user;fi"  ; done > /root/userexists.txt
 #check for userexists.txt greater than 0
 if [ -s /root/userexists.txt ]; then
@@ -402,14 +434,14 @@ fi
 dedipcheck() { #check for same amount of dedicated ips
 
 if [ $keepoldips ];then 
- echo "Keeping old ips, copying ips file over."
+ echo "Keeping old ips, copying ips file over."|tee -a $scriptlog
  ssh $ip -p$port "cp -rp /etc/ips{,.bak}"
  rsync -aqHe "ssh -p${port}" /etc/ips $ip:/etc/
  ssh $ip -p$port "/etc/init.d/ipaliases restart"
 fi
 
 echo
-echo "Checking for dedicated Ips."
+echo "Checking for dedicated Ips." |tee -a $scriptlog
 sourceipcount=`cat /etc/ips | grep ^[0-9] | wc -l`
 destipcount=`ssh  $ip -p$port "cat /etc/ips |grep ^[0-9] | wc -l"`
 if (( $sourceipcount <= $destipcount ));then
@@ -446,6 +478,32 @@ if yesNo ;then
  cat /tmp/nameservers.txt >> /etc/wwwacct.conf " 
 fi
 
+}
+
+apacheprepostcheck() { #check for pre/post conf files
+apachefilelist="post_virtualhost_1.conf
+post_virtualhost_2.conf
+post_virtualhost_global.conf
+pre_main_1.conf
+pre_main_2.conf
+pre_main_global.conf
+pre_virtualhost_1.conf
+pre_virtualhost_2.conf
+pre_virtualhost_global.conf"
+for file in $apachefilelist; do
+ if [ -s /usr/local/apache/conf/includes/$file ]; then
+  #file exists and is non-zero size
+  echo
+  echo "/usr/local/apache/conf/includes/$file"
+  cat /usr/local/apache/conf/includes/$file
+  echo
+  echo "Found extra apache configuration in $file, copy to new server?"
+  if yesNo ; then
+   ssh -p$port $ip "mv /usr/local/apache/conf/includes/$file{,.bak}"
+   rsync -avHPe "ssh -p$port" /usr/local/apache/conf/includes/$file $ip:/usr/local/apache/conf/includes/
+  fi
+ fi
+done
 }
 
 phpapicheck() { #run after EA so php4 can be supported
@@ -551,7 +609,8 @@ sleep 1
 
 mysqlextradbcheck() { #find dbs created outside of cpanel, with potential to copy them over.
 #skip this fucntion if the username prefix is disabled.
-if ! [ $(grep database /var/cpanel/cpanel.config) = "database_prefix=0" ]; then
+dbprefixvar=`grep database_prefix /var/cpanel/cpanel.config `
+if ! [ "$dbprefixvar" = "database_prefix=0" ]; then
  echo
  echo "Checking for extra mysql databases..."
  mkdir -p /home/temp/
@@ -701,7 +760,7 @@ if [ $upcp ]; then
 fi
 
 #mysql
-if [ $rmysqlup ]; then
+if [ $mysqlup ]; then
  echo "Reinstalling mysql..."
  ssh $ip -p$port "
  sed -i.bak /mysql-version/d /var/cpanel/cpanel.config ; 
@@ -898,6 +957,13 @@ if [ -s /etc/remotedomains ]; then
  read
 fi
 
+
+if [ $localcluster ];then
+ echo 'Local DNS clustering was found! May need to setup on the new server.'
+ echo 'Press enter to continue...'
+ read
+fi
+
 #check for alternate exim ports
 eximcheck=`grep ^daemon_smtp_ports /etc/exim.conf`
 eximexpect="daemon_smtp_ports = 25 : 465"
@@ -915,6 +981,7 @@ read
 
 mysqldumpinitialsync() {
 echo
+mkdir -p /home/dbdumps
 if [ -s /root/dblist.txt ]; then
  echo "Found extra databases to dump..."
  for db in `cat /root/dblist.txt`; do 
@@ -1000,6 +1067,7 @@ echo "Press enter to begin final sync..."
 read
 syncstarttime=`date +%F.%T`
 
+rsyncupgrade
 
 if [ $stopservices ]; then
 echo "Stopping Services..."
@@ -1088,11 +1156,14 @@ rsyncupgrade () {
 #rsync 3+ supports the --log-file option
 #get current rsync version
 RSYNCVERSION=`rsync --version |head -n1 |awk '{print $3}'`
-if [ "$RSYNCVERSION" < 3.0 ]; then
+rsyncmajor=`echo $RSYNCVERSION |cut -d. -f1`
+if [ "$rsyncmajor" -lt 3 ]; then
  echo "Updating rsync..."
  LOCALCENT=`cat /etc/redhat-release |awk '{print $3}'|cut -d '.' -f1`
  LOCALARCH=`uname -i`
  rpm -Uvh http://migration.sysres.liquidweb.com//rsync/rsync-3.0.0-1.el$LOCALCENT.rf.$LOCALARCH.rpm
+else
+ echo "Rsync up to date."
 fi
 
 #REMOTECENT=`ssh -p$PORT $USER@$IP "cat /etc/redhat-release" |awk '{print $3}'|cut -d '.' -f1`

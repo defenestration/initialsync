@@ -1,7 +1,14 @@
-#Changelog since dec19th###########
+#Changelog ###########
 # Dec19 mysqldbfinalsync, added more logging to /tmp/mysqldump.log so it would show database names. want to add a db only sync.
 # Dec 25 simplified single user sync
 # Dec 26 Added "actions taken" to end of final sync.
 # Jan 4 2012 added updating rsync to greater than 3, and logging for rsync/ found rsync loggin wiht --log-file isn't that useful actually :/  probably will want to log output of --stats but it adds the same output as -v
 # added scriptlog for version, start, choice, end times.
-
+# Jan 5 fixed rsync version comapre string
+# Jan 8 2011 wrapped variable in if statement in quotes in mysqlextradbcheck
+#  added rsync upgrade to final sync
+#  added apacheprepostcheck function to presync
+# Jan 16 2011 - implemented dbsync function.
+#  Added dnsclustercheck function.
+#  Tweaked apacheprepostcheck to print file contents and backup the conf file before copying.
+# Jan 17 2011 - Fixed mysqlup so mysql actually updates.
