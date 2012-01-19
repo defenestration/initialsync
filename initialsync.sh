@@ -4,6 +4,7 @@ ver="Dev - Jan 19 2012"
 #todo: 
 # copy modsec configs? or at least display it.
 # make ssh have quieter output? tried and failed before though.
+# moar logging!
 
 # Presync:
 # streamline initial choice logic
@@ -903,8 +904,9 @@ if [ "$user" == "$ruser" ]; then
 #check for non-empty vars
  if [ $userhomelocal ]; then
   if [ $userhomeremote ]; then
-   echo "Syncing Home directory for $user. $userhomelocal to ${ip}:${userhomeremote}, please wait..." |tee -a $scriptlog
+   echo "Syncing Home directory for $user. $userhomelocal to ${ip}:${userhomeremote}" |tee -a $scriptlog
    echo "Verbose rsync output logging to $scriptlog"
+   echo "Please wait..."
    rsync -avHle  "ssh -p$port" ${userhomelocal}/ ${ip}:${userhomeremote}/ >> $scriptlog 
   else
    #remote fails
@@ -1114,10 +1116,10 @@ if [ -s /root/userlist.txt ]; then
  echo "Found /root/userlist.txt."
  userlist=`cat /root/userlist.txt`
  echo "$userlist"
- if yesNo "Are these users correct?";
+ if yesNo "Are these users correct?"; then
   echo "Continuing."
  else
-  if yesNo "Would you like to migrate all users?";
+  if yesNo "Would you like to migrate all users?"; then
    echo "Syncing all users."
    userlist=`/bin/ls -A /var/cpanel/users`
   else
