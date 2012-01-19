@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Jan 17 2012"
+ver="Dev - Jan 19 2012"
 #todo: 
 # copy modsec configs? or at least display it.
 # make ssh have quieter output? tried and failed before though.
@@ -31,16 +31,21 @@ ver="Jan 17 2012"
 #  Added dnsclustercheck function.
 #  Tweaked apacheprepostcheck to print file contents and backup the conf file before copying.
 # Jan 17 2011 - Fixed mysqlup so mysql actually updates.
+# Jan 18 2011 - Added hosts/dbsync file script code into this script
+# Jan 19 2011 - Added additional queries for finalsync userlist verification.
+#  Added rsync logging and adjusted scriptlog location
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
-scriptlog=/tmp/initialsync.log
+scriptlogdir=/home/temp/
+scriptlog=/home/temp/initialsync.$starttime.log
 dnr=/home/didnotrestore.txt
 [ -s $dnr ] && dnrusers=`cat $dnr`
 #for home2 
 > /tmp/remotefail.txt
 > /tmp/localfail.txt
 > /tmp/migration.rsync.log
+mkdir -p $scriptlogdir
 touch $scriptlog
 echo "Version $ver" >> $scriptlog
 echo "Started $starttime" >> $scriptlog
@@ -296,9 +301,42 @@ sleep 2
 hostsgen() {
 echo
 echo "Generating hosts file..." 
+#ssh $ip -p$port "wget -O /scripts/hosts.sh http://migration.sysres.liquidweb.com/hosts.sh ; bash /scripts/hosts.sh" 
+cat > /scripts/hosts.sh <<'EOF'
+#!/bin/bash
+#abrevick@lw Nov 21 2011
+#obtain hosts file format from a cpanel server for easy testing
+hostsfile=/usr/local/apache/htdocs/hosts.txt
+hostsfilealt=/usr/local/apache/htdocs/hostsfile.txt
+ip=`grep ADDR /etc/wwwacct.conf |cut -f2 -d" "`
+if [ -s $hostsfile ]; then
+ mv $hostsfile{,.bak}
+fi
+if [ -s /etc/userdatadomains ]; then
+#new way for cpanel 11.27+ 
+ for ips in `/scripts/ipusage | cut -d" " -f1`; do 
+  sites=`grep $ips /etc/userdatadomains |awk -F== '{print $4}'|sort |uniq | sed -e 's/\(.*\)/\1 www.\1/g' `; 
+  echo $ips $sites ; 
+ done | tee $hostsfile ; 
+#one line per domain (purkis way)
+  > $hostsfilealt
+  cat /etc/userdatadomains | sed -e 's/:/ /g' -e 's/==/ /g' -e 's/\*/x/g' | while read sdomain user owner type maindomain docroot ip port ; do 
+  echo $ip $sdomain "www."$sdomain >> $hostsfilealt 
+ done 
 echo
-ssh $ip -p$port "wget -O /scripts/hosts.sh http://migration.sysres.liquidweb.com/hosts.sh ; bash /scripts/hosts.sh" 
-echo 
+echo "Generated hosts file at http://${ip}/hosts.txt"
+echo "One line per domain at http://${ip}/hostsfile.txt" 
+else
+#old way
+echo "/etc/userdatadomains not found, using old way."
+ /scripts/ipusage | sed -e 's/\[mail:.*//g' -e 's/,/ /g' -e 's/\[http://g' -e 's/\]//g' -e 's/\[ftp:.*//g' | sed 's/\ \ /\ /g' | tee $hostsfile 
+/scripts/ipusage | sed -e 's/\[mail:.*//g' -e 's/,/ /g' -e 's/\[http://g' -e 's/\]//g' -e 's/\[ftp:.*//g' -e 's/\ \ /\ /g' -e 's/\ \([a-zA-Z0-9]\)/\ www.\1/g' | tee -a $hostsfile
+echo
+echo "Generated hosts file at http://${ip}/hosts.txt." 
+fi
+EOF
+rsync -avHPe "ssh -p$port" /scripts/hosts.sh $ip:/scripts/
+ssh -p$port $ip "bash /scripts/hosts.sh"
 sleep 2
 }
 
@@ -865,8 +903,9 @@ if [ "$user" == "$ruser" ]; then
 #check for non-empty vars
  if [ $userhomelocal ]; then
   if [ $userhomeremote ]; then
-   echo "Syncing Home directory for $user. $userhomelocal to ${ip}:${userhomeremote}, please wait..."
-   rsync -aqHle  "ssh -p$port" ${userhomelocal}/ ${ip}:${userhomeremote}/
+   echo "Syncing Home directory for $user. $userhomelocal to ${ip}:${userhomeremote}, please wait..." |tee -a $scriptlog
+   echo "Verbose rsync output logging to $scriptlog"
+   rsync -avHle  "ssh -p$port" ${userhomelocal}/ ${ip}:${userhomeremote}/ >> $scriptlog 
   else
    #remote fails
    echo "Remote path for $user not found."
@@ -989,7 +1028,8 @@ if [ -s /root/dblist.txt ]; then
   ssh $ip -p$port "mysqladmin create $db"
  done
  rsync --progress -avHlze "ssh -p$port" /home/dbdumps $ip:/home/
- ssh $ip -p$port "wget migration.sysres.liquidweb.com/dbsync.sh -O /scripts/dbsync.sh; screen -S dbsync -d -m bash /scripts/dbsync.sh" &
+# ssh $ip -p$port "wget migration.sysres.liquidweb.com/dbsync.sh -O /scripts/dbsync.sh; screen -S dbsync -d -m bash /scripts/dbsync.sh" &
+dbsyncscript
  echo "Databases restoring in screen dbsync on remote server."
  echo "Mysql user permissions will need to be restored to the new server."
  read
@@ -998,6 +1038,35 @@ else
 fi
 
 }
+dbsyncscript() {
+cat > /scripts/dbsync.sh <<'EOF'
+#!/bin/bash
+#ran on remote server to sync dbs.
+LOG=/home/dbdumps/dbdumps.log
+if [ -d /home/dbdumps ]; then
+ cd /home/dbdumps
+ echo "Dump dated `date`" > $LOG
+ #if the prefinalsyncdb directory exists, rename it
+ test -d /home/prefinalsyncdbs && mv /home/prefinalsyncdbs{,.`date +%F.%R`.bak}
+ mkdir /home/prefinalsyncdbs
+ for each in `ls|grep .sql|cut -d '.' -f1`; do
+  echo "dumping $each" |tee -a $LOG
+  (mysqldump $each > /home/prefinalsyncdbs/$each.sql) 2>>$LOG
+  echo " importing $each" | tee -a $LOG
+  (mysql $each < /home/dbdumps/$each.sql)  2>>$LOG
+ done
+ echo "Finished, hit a key to see the log."
+ read
+ less $LOG
+else
+ echo "/home/dbdumps not found"
+ read
+fi
+EOF
+rsync -aHPe "ssh -p$port" /scripts/dbsync.sh $ip:/scripts/
+ssh $ip -p$port "screen -S dbsync -d -m bash /scripts/dbsync.sh" &
+}
+
 mysqldbfinalsync() {
 echo "Dumping the databases..."
 test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%T`.bak}
@@ -1021,7 +1090,8 @@ fi
 rsync --progress -avHlze "ssh -p$port" /home/dbdumps $ip:/home/
 
 #dbsyncin screen madness
-ssh $ip -p$port "wget migration.sysres.liquidweb.com/dbsync.sh -O /scripts/dbsync.sh; screen -S dbsync -d -m bash /scripts/dbsync.sh" &
+#ssh $ip -p$port "wget migration.sysres.liquidweb.com/dbsync.sh -O /scripts/dbsync.sh; screen -S dbsync -d -m bash /scripts/dbsync.sh" &
+dbsyncscript
 }
 
 mysqldumpfunction() {
@@ -1041,9 +1111,20 @@ echo "Running final sync..." |tee -a $scriptlog
 
 #check for previous migration
 if [ -s /root/userlist.txt ]; then 
- echo "Found /root/userlist.txt, using as userlist"
+ echo "Found /root/userlist.txt."
  userlist=`cat /root/userlist.txt`
  echo "$userlist"
+ if yesNo "Are these users correct?";
+  echo "Continuing."
+ else
+  if yesNo "Would you like to migrate all users?";
+   echo "Syncing all users."
+   userlist=`/bin/ls -A /var/cpanel/users`
+  else
+   echo "Please edit /root/userlist.txt with the users you wish to migrate and rerun the script."
+   exit 0
+  fi
+ fi 
 else
  echo "Syncing all users."
  userlist=`/bin/ls -A /var/cpanel/users`
