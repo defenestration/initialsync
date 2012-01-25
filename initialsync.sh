@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Dev - Jan 19 2012"
+ver="Jan 22 2012"
 #todo: 
 # copy modsec configs? or at least display it.
 # make ssh have quieter output? tried and failed before though.
@@ -35,6 +35,8 @@ ver="Dev - Jan 19 2012"
 # Jan 18 2011 - Added hosts/dbsync file script code into this script
 # Jan 19 2011 - Added additional queries for finalsync userlist verification.
 #  Added rsync logging and adjusted scriptlog location
+# Jan 22 2011 - Stop Ipaliases on new server if keepoldips is set.
+#  Added logging of pkgacct and restorepkg instead of showing to screen.
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
@@ -844,13 +846,12 @@ echo $userlist > /root/userlist.txt
 mainip=`grep ADDR /etc/wwwacct.conf | awk '{print $2}'`
 for user in $userlist; do 
  userip=`grep ^IP= /var/cpanel/users/$user|cut -d '=' -f2`
- /scripts/pkgacct --skiphomedir $user 
- rsync -avHlPe "ssh -p$port" /home*/cpmove-$user.tar.gz $ip:/home 
+ echo "Packaging $user, logging to $scriptlog" 
+ /scripts/pkgacct --skiphomedir $user >> $scriptlog
+ echo "Rsyncing cpmove-$user.tar.gz to $ip:/home/"
+ rsync -aqHlPe "ssh -p$port" /home*/cpmove-$user.tar.gz $ip:/home 
+ echo "Restoring package" 
 #check for not enough ips
- echo "main ip:$mainip"
- echo "user ip:$userip"
- echo "ipcheck: $ipcheck"
-
 #If keeping old ips.
  if [[ $keepoldips ]]; then
   ssh $ip -p$port "mkdir -p /home/temp; 
@@ -860,7 +861,7 @@ for user in $userlist; do
   else
    /scripts/restorepkg /home/temp/cpmove-$user.tar.gz ; 
   fi
-  mv /home/temp/cpmove-$user.tar.gz /home/" 
+  mv /home/temp/cpmove-$user.tar.gz /home/"
   
  else
 #normal restore
@@ -1004,6 +1005,13 @@ if [ $localcluster ];then
  echo 'Press enter to continue...'
  read
 fi
+
+#if keep old ips was set, stop ipaliases on the new server, to prevent it from 'stealing' the ips if the old server goes offline.
+if [ $keepoldips ]; then
+ echo "Stopping Ip aliases on new server to prevent Ip stealing on new server."
+ ssh -p$port $ip "/etc/init.d/ipaliases stop"
+fi
+ 
 
 #check for alternate exim ports
 eximcheck=`grep ^daemon_smtp_ports /etc/exim.conf`
