@@ -1,6 +1,9 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Jan 22 2012"
+ver="Jan 26 2012"
+# http://migration.sysres.liquidweb.com/initialsync.sh
+# https://github.com/defenestration/initialsync
+
 #todo: 
 # copy modsec configs? or at least display it.
 # make ssh have quieter output? tried and failed before though.
@@ -37,6 +40,7 @@ ver="Jan 22 2012"
 #  Added rsync logging and adjusted scriptlog location
 # Jan 22 2011 - Stop Ipaliases on new server if keepoldips is set.
 #  Added logging of pkgacct and restorepkg instead of showing to screen.
+# Jan 26 2011 - Memcache install was broken, missing a space >_< fixed.
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
@@ -780,7 +784,7 @@ fi
 if [ "$memcache" ]; then
  echo "Memcache found, installing remotely..."
  echo
- ssh $ip -p$port'
+ ssh $ip -p$port '
  wget -O /scripts/confmemcached.pl http://layer3.liquidweb.com/scripts/confMemcached/confmemcached.pl
 chmod +x /scripts/confmemcached.pl
 /scripts/confmemcached.pl --memcached-full
