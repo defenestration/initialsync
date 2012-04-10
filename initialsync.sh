@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Jan 26 2012"
+ver="Apr 02 2012"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -8,12 +8,15 @@ ver="Jan 26 2012"
 # copy modsec configs? or at least display it.
 # make ssh have quieter output? tried and failed before though.
 # moar logging!
+# sslcheck - sanitize * in cert file names.
 
 # Presync:
 # streamline initial choice logic
-# ssl cert status -expired or not
 # get domains associated with users, for copying over zone files from new server. lower TTls only for domains that are migrating?
-# check for remote mysql server, /root/.my.cnf, check for blank /etc/my.cnf, check for mysql moved to /home/
+# check for remote mysql server, /root/.my.cnf, check for blank /etc/my.cnf
+# Show number of total cpanel users compared to what the script found in userlist.txt.
+# Show a count of accounts left to sync during the sync like (2/15 synced)
+# Compare disk space of partitions
 
 # Finalchecks:
 # run expect on rebuildphpconf to make sure it installed correctly.
@@ -28,19 +31,31 @@ ver="Jan 26 2012"
 # Jan 4 2012 added updating rsync to greater than 3, and logging for rsync/ found rsync loggin wiht --log-file isn't that useful actually :/  probably will want to log output of --stats but it adds the same output as -v
 # added scriptlog for version, start, choice, end times.
 # Jan 5 fixed rsync version comapre string
-# Jan 8 2011 wrapped variable in if statement in quotes in mysqlextradbcheck
+# Jan 8 2012 wrapped variable in if statement in quotes in mysqlextradbcheck
 #  added rsync upgrade to final sync
 #  added apacheprepostcheck function to presync
-# Jan 16 2011 - implemented dbsync function.
+# Jan 16 2012 - implemented dbsync function.
 #  Added dnsclustercheck function.
 #  Tweaked apacheprepostcheck to print file contents and backup the conf file before copying.
-# Jan 17 2011 - Fixed mysqlup so mysql actually updates.
-# Jan 18 2011 - Added hosts/dbsync file script code into this script
-# Jan 19 2011 - Added additional queries for finalsync userlist verification.
+# Jan 17 2012 - Fixed mysqlup so mysql actually updates.
+# Jan 18 2012 - Added hosts/dbsync file script code into this script
+# Jan 19 2012 - Added additional queries for finalsync userlist verification.
 #  Added rsync logging and adjusted scriptlog location
-# Jan 22 2011 - Stop Ipaliases on new server if keepoldips is set.
+# Jan 22 2012 - Stop Ipaliases on new server if keepoldips is set.
 #  Added logging of pkgacct and restorepkg instead of showing to screen.
-# Jan 26 2011 - Memcache install was broken, missing a space >_< fixed.
+# Jan 26 2012 - Memcache install was broken, missing a space >_< fixed.
+# Jan 29 2012 - Added mysqlsymlink check
+# Feb 1  2012 - added reloading for nsd nameserver
+#  moved imagic ffmpeg and memcache to final checks so they are installed after EA
+# Feb 2  2012 - added SSL cert check, removed IP sync migration.
+# Feb 6 2012 -  Moved sslcertcheck to presync.
+# Feb 16 2012 - Added gcccheck
+# Feb 22 2012 - Fixed path of the dest.port.txt file when inputting new destination server ip
+#  Updated single user sync to restore original authorized_keys on destination server after sync (for shared server moves)
+# Feb 28 2012 - Fixed upcp from running twice
+# Mar 22 2012 - Fixed postgres find.
+# Mar 29 2012 - Added rubygems function.
+# Apr 2 2012 - Fixed dbsync screen name
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
@@ -89,8 +104,7 @@ Select the migration type:
 2) Basic sync (all users, no version matching) 
 3) Single user sync (no version matching)
 4) User list sync (from /root/userlist.txt, no version matching)
-5) Full sync - keeping old ips (/etc/ips is copied over)
-8) Database sync - only sync databases for cpanel users.
+8) Database sync - only sync databases for cpanel users, and from /root/dblist.txt.
 9) Final sync (from /root/userlist.txt or all users)
 0) Quit"
 }
@@ -116,9 +130,9 @@ while [ $mainloop == 0 ] ; do
  4)
   listsync
   mainloop=1   ;;
- 5)
-  keepipsync
-  mainloop=1 ;;
+# 5)
+#  keepipsync
+#  mainloop=1 ;;
  8) 
   dbsync
   mainloop=1 ;;
@@ -165,6 +179,9 @@ while [ $singleuserloop == 0 ]; do
   accountcheck #if conflicting accounts are found, asks
   acctcopy
   didntrestore
+  echo
+  echo "Removing ssh key from remote server."
+  ssh -p$port $ip "cp -rp ~/.ssh/authorized_keys{.syncbak,}"
 
  else
   echo "Could not find $userlist."
@@ -230,6 +247,7 @@ echo "Running Pre-sync functions..." |tee -a $scriptlog
 if ! [ "${singleuserloop}${listsyncvar}" ];then 
  dnrcheck     #userlist is defined here
 fi
+sslcertcheck
 dnscheck     #lets you view current dns
 rsyncupgrade
 lowerttls    
@@ -237,12 +255,14 @@ getip        #asks for ip or checks a file to confirm destination
 dnsclustercheck
 accountcheck #if conflicting accounts are found, asks
 dedipcheck  #asks if an equal amount of ips are not found
+mysqlsymlinkcheck
 }
 
 versionmatching() {
 #only full syncs
 echo "Running version matching..." |tee -a $scriptlog
 nameservers
+gcccheck #needs to be before upcp, ea
 upcp
 apacheprepostcheck
 phpmemcheck 
@@ -251,6 +271,7 @@ mysqlcheck
 upea
 installprogs
 phpapicheck  # to be ran after ea so php4 can be compiled in if needed
+rubygems
 }
 
 copyaccounts() {
@@ -367,6 +388,26 @@ fi
 
 }
 
+sslcertcheck() {
+#SSl cert checking.
+echo "Checking for SSL Certificates in apache conf."
+crtcheck=`grep SSLCertificateFile /usr/local/apache/conf/httpd.conf`
+if [ "$crtcheck" ]; then
+ echo "SSL Certificates detected."
+ echo
+ for crt in `grep SSLCertificateFile /usr/local/apache/conf/httpd.conf |awk '{print $2}'`; do
+  echo $crt; openssl x509 -noout -in $crt -issuer  -subject  -dates
+  echo 
+ done
+ echo
+ echo "Enter to continue..."
+ read
+else
+ echo "No SSL Certificates found in httpd.conf."
+ sleep 2 
+fi
+}
+
 dnscheck() {
 echo
 echo "Checking Current dns..." |tee -a $scriptlog
@@ -389,6 +430,13 @@ echo "Lowering TTLs..." |tee -a $scriptlog
 #lower ttls
 sed -i.lwbak -e 's/^\$TTL.*/$TTL 300/g' -e 's/[0-9]\{10\}/'`date +%Y%m%d%H`'/g' /var/named/*.db
 rndc reload
+#for the one time i encountered NSD
+nsdcheck=`ps aux |grep nsd |grep -v grep`
+if [ "$nsdcheck" ]; then
+ echo "Nsd found, reloading"
+ nsdc rebuild
+ nsdc reload
+fi
 }
 
 getip() {
@@ -401,17 +449,17 @@ if [ -f $ipfile ]; then
  echo
  echo "Ip from previous migration found `echo $ip`"  
  getport
- echo "Testing connetion to remote server..."
+ #echo "Testing connetion to remote server..."
+ #echo
+ #ssh $ip -p$port "cat /etc/hosts |tail -n3 ; ifconfig eth0 |head -n2"
+ #echo
+ #echo "Test complete."
  echo
- ssh $ip -p$port "cat /etc/hosts |tail -n3 ; ifconfig eth0 |head -n2"
- echo
- echo "Test complete."
- echo
- if yesNo "Is $ip the server you want? Check above output for a successful connection.  Otherwise enter No to input new ip." ;then
+ if yesNo "Is $ip the server you want?  Otherwise enter No to input new ip." ;then
   echo "Ok, continuing with $ip"
   sshkeygen
  else
-  rm -rf /home/dest.port.txt
+  rm -rf /root/dest.port.txt
   ipask 
  fi
 else
@@ -454,7 +502,7 @@ echo "Generating SSH keys" |tee -a $scriptlog
 if ! [ -f ~/.ssh/id_rsa ]; then
  ssh-keygen -q -N "" -t rsa -f ~/.ssh/id_rsa
 fi
-cat ~/.ssh/id_rsa.pub | ssh $ip -p$port "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
+cat ~/.ssh/id_rsa.pub | ssh $ip -p$port "cp -rp ~/.ssh/authorized_keys{,.syncbak} ; mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
 ssh $ip -p$port "echo \'Connected!\';  cat /etc/hosts| grep $ip " 
 }
  
@@ -512,7 +560,6 @@ sleep 1
 }
 
 nameservers() {
-
 echo "Set nameservers on remote host?"
 grep ^NS[\ 0-9]  /etc/wwwacct.conf 
 if yesNo ;then
@@ -621,12 +668,13 @@ memcache=`ps aux | grep -e 'memcache' | grep -v grep | tail -n1 `
 #java
 java=`which java 2>1 /dev/null`
 
+#postgresql 
+postgres=`ps aux |grep -e 'postgres' |grep -v grep |tail -n1`
+
 #other stuff, say if it needs to be installed at the end
 xcachefound=`ps aux | grep -e 'xcache' | grep -v grep | tail -n1`
 eaccelfound=`ps aux | grep -e 'eaccelerator' | grep -v grep |tail -n1`
 nginxfound=`ps aux | grep  -e 'nginx' |grep -v grep| tail -n1`
-postgresfound=`ps aux |grep -e 'postgres' |grep -v grep |tail -n1`
-
 }
 
 mysqlcheck() {
@@ -684,6 +732,42 @@ else
 fi
 }
 
+mysqlsymlinkcheck() {
+echo
+echo "Checking if Mysql was moved to a different location."
+#test if symbolic link
+if [ -L /var/lib/mysql ]; then
+ echo "Warning, /var/lib/mysql is a symlink! Grepping for datadir in my.cnf:"
+ grep datadir /etc/my.cnf
+ echo "You may want to relocate mysql on the new server (if it isnt already) before continuing."
+ if yesNo 'Yes to continue, no to exit.'; then
+  echo "Continuing..."
+ else 
+  echo "Exiting."
+  exit 0
+ fi
+fi
+mysqldatadir=`grep ^datadir /etc/my.cnf`
+if [ "$mysqldatadir" ]; then 
+ echo "Found mysql data directory: $mysqldatadir"
+ echo "Enter to continue."
+ read
+fi
+}
+
+gcccheck() {
+echo 'Checking for gcc on new server, because some newer storm servers dont have gcc installed so EA and possibly other things will fail to install.'
+gcccheck=$(ssh -p$port $ip "rpm -qa gcc")
+if [ "$gcccheck" ]; then
+ echo "Gcc found, continuing..."
+else
+ echo 'Gcc not found, running "yum install gcc" on remote server. You may have to hit "y" then Enter to install.'
+ sleep 3
+ ssh -p$port $ip "yum install gcc"
+fi
+
+}
+
 upcp() {
 echo
 echo "Checking Cpanel versions..."
@@ -696,7 +780,7 @@ if  [[ $cpver > $rcpver ]]; then
  if yesNo "Run Upcp on remote server?" ; then
   echo "Running upcp..."
   upcp=1
-  ssh $ip -p$port "/scripts/upcp"
+  #ssh $ip -p$port "/scripts/upcp"
  else
   echo "Okay, fine, not running upcp." 
  fi
@@ -764,32 +848,6 @@ ssh $ip -p$port "wget -O /scripts/lwbake http://layer3.liquidweb.com/scripts/lwb
 chmod 700 /scripts/lwbake
 wget -O /scripts/plbake http://layer3.liquidweb.com/scripts/plBake/plBake
 chmod 700 /scripts/plbake"
-
-#ffmpeg
-if [ $ffmpeg ] ; then
- echo "Ffmpeg found, installing on new server..."
- ssh $ip -p$port "/scripts/lwbake ffmpeg-php "
-fi
-
-#imagick
-if [ $imagick ] ; then 
- echo "Imagemagick found, installing on new server..."
- ssh $ip -p$port "
- /scripts/lwbake imagemagick
- /scripts/lwbake imagick
- /scripts/lwbake magickwand"
-fi
-
-#memcache
-if [ "$memcache" ]; then
- echo "Memcache found, installing remotely..."
- echo
- ssh $ip -p$port '
- wget -O /scripts/confmemcached.pl http://layer3.liquidweb.com/scripts/confMemcached/confmemcached.pl
-chmod +x /scripts/confmemcached.pl
-/scripts/confmemcached.pl --memcached-full
-service httpd restart'
-fi
 
 #java
 if [ "$java" ];then
@@ -960,6 +1018,35 @@ if [ -s $dnr ]; then
 fi
 }
 
+php3rdpartyapps() {
+#apps that add a php module should be installed after EA is ran at the end
+#ffmpeg
+if [ $ffmpeg ] ; then
+ echo "Ffmpeg found, installing on new server..."
+ ssh $ip -p$port "/scripts/lwbake ffmpeg-php "
+fi
+
+#imagick
+if [ $imagick ] ; then
+ echo "Imagemagick found, installing on new server..."
+ ssh $ip -p$port "
+ /scripts/lwbake imagemagick
+ /scripts/lwbake imagick
+ /scripts/lwbake magickwand"
+fi
+ 
+#memcache
+if [ "$memcache" ]; then
+ echo "Memcache found, installing remotely..."
+ echo
+ ssh $ip -p$port '
+ wget -O /scripts/confmemcached.pl http://layer3.liquidweb.com/scripts/confMemcached/confmemcached.pl
+chmod +x /scripts/confmemcached.pl
+/scripts/confmemcached.pl --memcached-full
+service httpd restart'
+fi
+}
+
 finalchecks() {
 
 #mailperm, fixquotas
@@ -996,6 +1083,8 @@ if [ "${skippedea}${mysqlupcheck}" ]; then
  phpapicheck
 fi
 
+php3rdpartyapps
+
 if [ -s /etc/remotedomains ]; then
  echo 'Domains found in /etc/remotedomains, double check their mx settings!'
  cat /etc/remotedomains
@@ -1026,7 +1115,7 @@ if [ "$eximcheck" != "$eximexpect" ]; then
  echo 'Set them up within WHM on the new server. (enter to continue)'
  read
 fi
- 
+
 echo "===End Final Checks==="
 echo "Enter to continue"
 read
@@ -1046,6 +1135,7 @@ if [ -s /root/dblist.txt ]; then
 dbsyncscript
  echo "Databases restoring in screen dbsync on remote server."
  echo "Mysql user permissions will need to be restored to the new server."
+ echo "Enter to continue."
  read
 else
  echo "Did not find /root/dblist.txt"
@@ -1195,6 +1285,14 @@ if [ $copydns ]; then
  rsync -aqHPe "ssh -p$port" $ip:/var/named/*.db /var/named/
  sed -i -e 's/^\$TTL.*/$TTL 300/g' -e 's/[0-9]\{10\}/'`date +%Y%m%d%H`'/g' /var/named/*.db
  rndc reload 
+ #for the one time i encountered NSD
+ nsdcheck=`ps aux |grep nsd |grep -v grep`
+ if [ "$nsdcheck" ]; then
+  echo "Nsd found, reloading"
+  nsdc rebuild
+  nsdc reload
+ fi
+
 fi
 
 #restart services
@@ -1232,7 +1330,7 @@ if [ $stopservices ]; then
 fi
 [ $copydns ] && echo "DNS was copied over from new server."
 
-echo 'Final sync complete, check the screen "dbdumps" on the remote server to ensure all databases imported correctly.'
+echo 'Final sync complete, check the screen "dbsync" on the remote server to ensure all databases imported correctly.'
 }
 
 finalfixes() {
@@ -1264,6 +1362,15 @@ fi
 #REMOTECENT=`ssh -p$PORT $USER@$IP "cat /etc/redhat-release" |awk '{print $3}'|cut -d '.' -f1`
 #REMOTEARCH=`ssh -p$PORT $USER@$IP "uname -i"`
 #       ssh -p$PORT $USER@$IP "rpm -Uvh http://migration.sysres.liquidweb.com/rsync/rsync-3.0.0-1.el$REMOTECENT.rf.$REMOTEARCH.rpm"
+}
+
+rubygems() {
+echo 
+echo "Copying ruby gems over to new server."
+gem list | tail -n+4 | awk '{print $1}' > /root/gemlist.txt
+rsync -avHPe "ssh -p$port" /root/gemlist.txt $ip:/root/
+ssh -p$port $ip " cat /root/gemlist.txt | xargs gem install "
+
 }
 
 main
