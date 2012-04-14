@@ -540,12 +540,12 @@ echo "Checking for dedicated Ips." |tee -a $scriptlog
 if [[ -f /etc/userdatadomains ]]; then
  preliminary_ip_check=`cat /etc/userdatadomains|sed -e 's/:/ /g' -e 's/==/ /g'|cut -d ' ' -f8|tr -d [:blank:]|sort|uniq`
  server_main_ip=`cat /etc/wwwacct.conf|grep ADDR|cut -d ' ' -f2`
- for preliminary_ips in `cat $preliminary_ip_check`; do
+ for preliminary_ips in $preliminary_ip_check; do
   if [[ $preliminary_ips != $server_main_ip ]]; then
-   dedicated_ip_accounts="${dedicated_ip_accounts} dedicated_ip_accounts"
+   dedicated_ip_accounts="${dedicated_ip_accounts} $preliminary_ips"
   fi
  done
- sourceipcount=`cat $dedicated_ip_accounts`
+ sourceipcount=`echo $dedicated_ip_accounts|sed -e 's/ /\n/g'|wc -l`
 else
  sourceipcount=`cat /etc/ips | grep ^[0-9] | wc -l`
 fi
