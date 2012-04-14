@@ -535,7 +535,21 @@ fi
 
 echo
 echo "Checking for dedicated Ips." |tee -a $scriptlog
-sourceipcount=`cat /etc/ips | grep ^[0-9] | wc -l`
+# If /etc/userdatadomains exists, calculate dedicated IPs based on usage.
+# Otherwise uses same functionality as before.
+if [[ -f /etc/userdatadomains ]]; then
+ preliminary_ip_check=`cat /etc/userdatadomains|sed -e 's/:/ /g' -e 's/==/ /g'|cut -d ' ' -f8|tr -d [:blank:]|sort|uniq`
+ server_main_ip=`cat /etc/wwwacct.conf|grep ADDR|cut -d ' ' -f2`
+ for preliminary_ips in `cat $preliminary_ip_check`; do
+  if [[ $preliminary_ips != $server_main_ip ]]; then
+   dedicated_ip_accounts="${dedicated_ip_accounts} dedicated_ip_accounts"
+  fi
+ done
+ sourceipcount=`cat $dedicated_ip_accounts`
+else
+ sourceipcount=`cat /etc/ips | grep ^[0-9] | wc -l`
+fi
+# Check target server for number of dedicated IPs available
 destipcount=`ssh  $ip -p$port "cat /etc/ips |grep ^[0-9] | wc -l"`
 if (( $sourceipcount <= $destipcount ));then
  echo "Source server has less or equal ips compared to destination, continuing."
