@@ -57,6 +57,7 @@ ver="Apr 16 2012"
 # Mar 29 2012 - Added rubygems function.
 # Apr 2 2012 - Fixed dbsync screen name
 # Apr 16 2012 source ip count improvements by jmuffett
+#   added dbonlysync var to check if only mysqldump menu option was ran.
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
@@ -157,6 +158,7 @@ exit 0
 }
 
 dbsync() {
+dbonlysync=1
 echo "Database only sync." |tee -a $scriptlog
 userlist=`/bin/ls -A /var/cpanel/users`
 getip        #asks for ip or checks a file to confirm destination
@@ -1193,11 +1195,13 @@ mkdir -p /home/dbdumps
 ssh $ip -p$port 'test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%T`.bak}'
 mysqldumpver=`mysqldump --version |cut -d" " -f6 |cut -d, -f1`
 #dump user dbs
-for each in $userlist; do 
-  for db in `mysql -e 'show databases' | grep "^$each\_"`; do 
-   mysqldumpfunction
- done  
-done
+if [ $dbonlysync ]; then 
+ for each in $userlist; do 
+   for db in `mysql -e 'show databases' | grep "^$each\_"`; do 
+    mysqldumpfunction
+  done  
+ done
+fi
 #dump from list of dbs
 if [ -s /root/dblist.txt ]; then
  for db in `cat /root/dblist.txt`; do 
