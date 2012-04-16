@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Apr 02 2012"
+ver="Apr 16 2012"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -56,6 +56,7 @@ ver="Apr 02 2012"
 # Mar 22 2012 - Fixed postgres find.
 # Mar 29 2012 - Added rubygems function.
 # Apr 2 2012 - Fixed dbsync screen name
+# Apr 16 2012 source ip count improvements by jmuffett
 #######################
 #log when the script starts
 starttime=`date +%F.%T`

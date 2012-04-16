@@ -5,10 +5,30 @@
 # Jan 4 2012 added updating rsync to greater than 3, and logging for rsync/ found rsync loggin wiht --log-file isn't that useful actually :/  probably will want to log output of --stats but it adds the same output as -v
 # added scriptlog for version, start, choice, end times.
 # Jan 5 fixed rsync version comapre string
-# Jan 8 2011 wrapped variable in if statement in quotes in mysqlextradbcheck
+# Jan 8 2012 wrapped variable in if statement in quotes in mysqlextradbcheck
 #  added rsync upgrade to final sync
 #  added apacheprepostcheck function to presync
-# Jan 16 2011 - implemented dbsync function.
+# Jan 16 2012 - implemented dbsync function.
 #  Added dnsclustercheck function.
 #  Tweaked apacheprepostcheck to print file contents and backup the conf file before copying.
-# Jan 17 2011 - Fixed mysqlup so mysql actually updates.
+# Jan 17 2012 - Fixed mysqlup so mysql actually updates.
+# Jan 18 2012 - Added hosts/dbsync file script code into this script
+# Jan 19 2012 - Added additional queries for finalsync userlist verification.
+#  Added rsync logging and adjusted scriptlog location
+# Jan 22 2012 - Stop Ipaliases on new server if keepoldips is set.
+#  Added logging of pkgacct and restorepkg instead of showing to screen.
+# Jan 26 2012 - Memcache install was broken, missing a space >_< fixed.
+# Jan 29 2012 - Added mysqlsymlink check
+# Feb 1  2012 - added reloading for nsd nameserver
+#  moved imagic ffmpeg and memcache to final checks so they are installed after EA
+# Feb 2  2012 - added SSL cert check, removed IP sync migration.
+# Feb 6 2012 -  Moved sslcertcheck to presync.
+# Feb 16 2012 - Added gcccheck
+# Feb 22 2012 - Fixed path of the dest.port.txt file when inputting new destination server ip
+#  Updated single user sync to restore original authorized_keys on destination server after sync (for shared server moves)
+# Feb 28 2012 - Fixed upcp from running twice
+# Mar 22 2012 - Fixed postgres find.
+# Mar 29 2012 - Added rubygems function.
+# Apr 2 2012 - Fixed dbsync screen name
+# Apr 16 2012 source ip count improvements by jmuffett
+
