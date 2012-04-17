@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Apr 16 2012"
+ver="Apr 17 2012"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -58,6 +58,7 @@ ver="Apr 16 2012"
 # Apr 2 2012 - Fixed dbsync screen name
 # Apr 16 2012 source ip count improvements by jmuffett
 #   added dbonlysync var to check if only mysqldump menu option was ran.
+# Apr 17 - removed dbonlysync var, final sync wasn't syncing dbs.
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
@@ -1195,13 +1196,11 @@ mkdir -p /home/dbdumps
 ssh $ip -p$port 'test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%T`.bak}'
 mysqldumpver=`mysqldump --version |cut -d" " -f6 |cut -d, -f1`
 #dump user dbs
-if [ $dbonlysync ]; then 
- for each in $userlist; do 
-   for db in `mysql -e 'show databases' | grep "^$each\_"`; do 
-    mysqldumpfunction
-  done  
- done
-fi
+for each in $userlist; do 
+  for db in `mysql -e 'show databases' | grep "^$each\_"`; do 
+   mysqldumpfunction
+ done  
+done
 #dump from list of dbs
 if [ -s /root/dblist.txt ]; then
  for db in `cat /root/dblist.txt`; do 
