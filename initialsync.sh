@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Apr 17 2012"
+ver="Apr 20 2012"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -59,12 +59,16 @@ ver="Apr 17 2012"
 # Apr 16 2012 source ip count improvements by jmuffett
 #   added dbonlysync var to check if only mysqldump menu option was ran.
 # Apr 17 - removed dbonlysync var, final sync wasn't syncing dbs.
+# Apr 19 - Added option to invoke --update during final rsync, rsyncupdate
+# added cpbackupcheck to enable cpanel backups on the remote server.
+# Apr 20 - clarified Override Ip check question text
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
 scriptlogdir=/home/temp/
 scriptlog=/home/temp/initialsync.$starttime.log
 dnr=/home/didnotrestore.txt
+rsyncflags="-avHl"
 [ -s $dnr ] && dnrusers=`cat $dnr`
 #for home2 
 > /tmp/remotefail.txt
@@ -284,6 +288,7 @@ acctcopy
 didntrestore
 mysqlextradbcheck
 mysqldumpinitialsync
+cpbackupcheck
 finalchecks
 hostsgen
 }
@@ -564,8 +569,10 @@ else
  /scripts/ipusage
  echo 
  echo "Not enough dedicated IPs found on destination server ($destipcount) when compared to source server ($sourceipcount)."
- echo "If you are sure the server isn't using all its IPs for accounts you can override the Ip check by answering Yes. Otherwise answer No to put all sites on the main shared IP."
- if yesNo "Override IP check?" ;then
+# echo "If you are sure the server isn't using all its IPs for accounts you can override the Ip check by answering Yes. Otherwise answer No to put all sites on the main shared IP."
+ if yesNo "Override IP check?
+ yes = Try to restore accounts to dedicated IPs anyway (accouts will not all restore if there are not enough ips)
+ no  = Restore all to the main Shared ip" ;then
   ipcheck=1
   echo "Restoring to dedicated ips."
  else
@@ -988,7 +995,14 @@ if [ "$user" == "$ruser" ]; then
    echo "Syncing Home directory for $user. $userhomelocal to ${ip}:${userhomeremote}" |tee -a $scriptlog
    echo "Verbose rsync output logging to $scriptlog"
    echo "Please wait..."
-   rsync -avHle  "ssh -p$port" ${userhomelocal}/ ${ip}:${userhomeremote}/ >> $scriptlog 
+   #add update flag for final rsync to add --update flag for rsync, doesn't over write files updated on the new server.
+   if [ $rsyncupdate ]; then
+    rsyncflags="-avHl --update" 
+   else 
+   #use for initial sync or overwriting files updated on the newer server.
+    rsyncflags="-avHl"
+   fi
+   rsync $rsyncflags -e  "ssh -p$port" ${userhomelocal}/ ${ip}:${userhomeremote}/ >> $scriptlog 
   else
    #remote fails
    echo "Remote path for $user not found."
@@ -1230,7 +1244,7 @@ fi
 finalsync() {
 echo
 echo "Running final sync..." |tee -a $scriptlog
-
+finalsynccheck=1
 #check for previous migration
 if [ -s /root/userlist.txt ]; then 
  echo "Found /root/userlist.txt."
@@ -1264,6 +1278,11 @@ fi
 
 if yesNo 'Copy /var/named/*.db over from new server? Will backup current directory. Dont do this unless migrating all users!' ;then 
  copydns=1
+fi
+
+#rsyncupdate
+if yesNo 'Use --update flag for final rsync? If files were updated on the destination server they wont be overwritten'; then
+ rsyncupdate=1
 fi
 
 echo "Press enter to begin final sync..."
@@ -1389,6 +1408,32 @@ gem list | tail -n+4 | awk '{print $1}' > /root/gemlist.txt
 rsync -avHPe "ssh -p$port" /root/gemlist.txt $ip:/root/
 ssh -p$port $ip " cat /root/gemlist.txt | xargs gem install "
 
+}
+
+cpbackupcheck() {
+echo "
+Checking if cpanel backups are enabled on new server."
+backupacctssetting=`ssh -p$port $ip "grep ^BACKUPACCTS /etc/cpbackup.conf" | awk '{print $2}' `
+backupenablesetting=`ssh -p$port $ip "grep ^BACKUPENABLE /etc/cpbackup.conf" | awk '{print $2}' `
+if [ $backupacctssetting = "yes" ]; then 
+  #backupaccts is true, check for backupenable also
+  if [ $backupenablesetting = "yes" ]; then
+    #backupenable is also true
+    echo "Backups are enabled"
+  else
+    cpbackupenable
+  fi
+else
+  cpbackupenable
+fi
+}
+
+cpbackupenable(){
+echo "Cpanel backups are disabled on $ip"
+if yesNo "Do you want to enable backups on the remote server?"; then
+    ssh -p$port $ip "sed -i -e 's/^\(BACKUPACCTS\).*/\1 yes/g' -e 's/^\(BACKUPENABLE\).*/\1 yes/g' "
+fi
+  
 }
 
 main
