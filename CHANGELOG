@@ -31,4 +31,8 @@
 # Mar 29 2012 - Added rubygems function.
 # Apr 2 2012 - Fixed dbsync screen name
 # Apr 16 2012 source ip count improvements by jmuffett
-
+#   added dbonlysync var to check if only mysqldump menu option was ran.
+# Apr 17 - removed dbonlysync var, final sync wasn't syncing dbs.
+# Apr 19 - Added option to invoke --update during final rsync, rsyncupdate
+# added cpbackupcheck to enable cpanel backups on the remote server.
+# Apr 20 - clarified Override Ip check question text
