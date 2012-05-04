@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Apr 20 2012"
+ver="May 1 2012"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -62,6 +62,8 @@ ver="Apr 20 2012"
 # Apr 19 - Added option to invoke --update during final rsync, rsyncupdate
 # added cpbackupcheck to enable cpanel backups on the remote server.
 # Apr 20 - clarified Override Ip check question text
+# Apr 30 - Fixed cpbackupcheck, path to cpbackup.conf
+# May  1 - Changed lowerttls to a find/sed to avoid bash wildcard completion errors
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
@@ -436,8 +438,9 @@ read
 lowerttls() {
 echo
 echo "Lowering TTLs..." |tee -a $scriptlog
-#lower ttls
-sed -i.lwbak -e 's/^\$TTL.*/$TTL 300/g' -e 's/[0-9]\{10\}/'`date +%Y%m%d%H`'/g' /var/named/*.db
+#lower ttls, switched to find command for a lot of domains
+#sed -i.lwbak -e 's/^\$TTL.*/$TTL 300/g' -e 's/[0-9]\{10\}/'`date +%Y%m%d%H`'/g' /var/named/*.db
+find /var/named/ -name \*.db -exec sed -i.lwbak -e 's/^\$TTL.*/$TTL 300/g' -e 's/[0-9]\{10\}/'`date +%Y%m%d%H`'/g' {} \;
 rndc reload
 #for the one time i encountered NSD
 nsdcheck=`ps aux |grep nsd |grep -v grep`
@@ -831,6 +834,11 @@ phpv=`php -v |head -n1|cut -d" " -f2`
 if ! [ $phpvr ]; then
  phpvr=`ssh $ip -p$port "php -v |head -n1 |cut -d\" \" -f2"`
 fi
+
+echo "
+Available software versions on remote server:"
+ssh -p $port $ip "/scripts/easyapache --latest-versions"
+
 if [[ $phpv < 5.3 ]];then 
  echo "If the php version should stay 5.2, you should manually run EA."
 fi
@@ -1431,7 +1439,7 @@ fi
 cpbackupenable(){
 echo "Cpanel backups are disabled on $ip"
 if yesNo "Do you want to enable backups on the remote server?"; then
-    ssh -p$port $ip "sed -i -e 's/^\(BACKUPACCTS\).*/\1 yes/g' -e 's/^\(BACKUPENABLE\).*/\1 yes/g' "
+    ssh -p$port $ip "sed -i.syncbak -e 's/^\(BACKUPACCTS\).*/\1 yes/g' -e 's/^\(BACKUPENABLE\).*/\1 yes/g' /etc/cpbackup.conf"
 fi
   
 }
