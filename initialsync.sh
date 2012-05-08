@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="May 1 2012"
+ver="May 8 2012"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -64,6 +64,7 @@ ver="May 1 2012"
 # Apr 20 - clarified Override Ip check question text
 # Apr 30 - Fixed cpbackupcheck, path to cpbackup.conf
 # May  1 - Changed lowerttls to a find/sed to avoid bash wildcard completion errors
+# May  8 - postgresfound variable was not set earlier, so postgres wouldn't get installed, changed variable to postgres.
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
@@ -111,7 +112,7 @@ echo "Main Menu:
 Select the migration type:
 1) Full sync (from /root/userlist.txt or all users, version matching)
 2) Basic sync (all users, no version matching) 
-3) Single user sync (no version matching)
+3) Single user sync (no version matching, shared server safe)
 4) User list sync (from /root/userlist.txt, no version matching)
 8) Database sync - only sync databases for cpanel users, and from /root/dblist.txt.
 9) Final sync (from /root/userlist.txt or all users)
@@ -916,7 +917,7 @@ if [ $ea ]; then
 fi
 
 #postgres
-if [ $postgresfound ]; then
+if [ $postgres ]; then
  echo "Installing Postgresql..."
  #use expect to install since it asks for input
  ssh $ip -p$port 'cp -rp /var/lib/pgsql{,.bak}
