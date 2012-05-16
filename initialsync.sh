@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="May 8 2012"
+ver="May 16 2012"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -65,6 +65,7 @@ ver="May 8 2012"
 # Apr 30 - Fixed cpbackupcheck, path to cpbackup.conf
 # May  1 - Changed lowerttls to a find/sed to avoid bash wildcard completion errors
 # May  8 - postgresfound variable was not set earlier, so postgres wouldn't get installed, changed variable to postgres.
+# May 16 - dnscheck now checks for domains owned by users in /root/userlist.txt - awalilko
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
@@ -428,7 +429,8 @@ if [ -f /root/dns.txt ]; then
  sleep 3
  cat /root/dns.txt | sort -n +3 -2 | more
 else
- domainlist=`cat /etc/userdomains |sort | sed -e 's/:.*//' |grep -v \*`
+ for user in $userlist; do cat /etc/userdomains | grep $user | cut -d: -f1 >> /root/domainlist.txt; done
+ domainlist=`cat /root/domainlist.txt`
  for each in $domainlist; do echo $each\ `dig @8.8.8.8 NS +short $each |sed 's/\.$//g'`\ `dig @8.8.8.8 +short $each` ;done | grep -v \ \ | column -t > /root/dns.txt
  cat /root/dns.txt | sort -n +3 -2 | more
 fi
