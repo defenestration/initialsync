@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="May 16 2012"
+ver="May 18 2012"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -66,6 +66,7 @@ ver="May 16 2012"
 # May  1 - Changed lowerttls to a find/sed to avoid bash wildcard completion errors
 # May  8 - postgresfound variable was not set earlier, so postgres wouldn't get installed, changed variable to postgres.
 # May 16 - dnscheck now checks for domains owned by users in /root/userlist.txt - awalilko
+# May 18 - /home/dbdumps wasn't renamed on the new server during initial sync, this could cause issues if there was a previous migration. set to rename that folder with a date on hte new server.
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
@@ -1166,6 +1167,9 @@ read
 
 mysqldumpinitialsync() {
 echo
+#backup dbdumps folder on new server.
+ssh $ip -p$port  "test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%R`.bak}"
+#dump backups on current server and copy them over.
 mkdir -p /home/dbdumps
 if [ -s /root/dblist.txt ]; then
  echo "Found extra databases to dump..."
