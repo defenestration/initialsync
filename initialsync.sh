@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="May 18 2012"
+ver="May 25 2012"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -67,6 +67,8 @@ ver="May 18 2012"
 # May  8 - postgresfound variable was not set earlier, so postgres wouldn't get installed, changed variable to postgres.
 # May 16 - dnscheck now checks for domains owned by users in /root/userlist.txt - awalilko
 # May 18 - /home/dbdumps wasn't renamed on the new server during initial sync, this could cause issues if there was a previous migration. set to rename that folder with a date on hte new server.
+# May 21 - Also check and rename /home/dbdumps on source server | skip logaholicDB copying.
+# May 25 - switched Lower TTLS to perl as sed -i doesn't exist in old versions of sed
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
@@ -444,7 +446,12 @@ echo
 echo "Lowering TTLs..." |tee -a $scriptlog
 #lower ttls, switched to find command for a lot of domains
 #sed -i.lwbak -e 's/^\$TTL.*/$TTL 300/g' -e 's/[0-9]\{10\}/'`date +%Y%m%d%H`'/g' /var/named/*.db
-find /var/named/ -name \*.db -exec sed -i.lwbak -e 's/^\$TTL.*/$TTL 300/g' -e 's/[0-9]\{10\}/'`date +%Y%m%d%H`'/g' {} \;
+#find /var/named/ -name \*.db -exec sed -i.lwbak -e 's/^\$TTL.*/$TTL 300/g' -e 's/[0-9]\{10\}/'`date +%Y%m%d%H`'/g' {} \;
+#switched to perl as sed -i doesn't exist in old versions of sed
+find /var/named/ -name \*.db -exec perl -pi -e 's/^\$TTL.*/\$TTL 300/g' {} \;
+find /var/named/ -name \*.db -exec perl -pi -e 's/[0-9]{10}/'`date +%Y%m%d%H`'/g' {} \;
+
+
 rndc reload
 #for the one time i encountered NSD
 nsdcheck=`ps aux |grep nsd |grep -v grep`
@@ -739,7 +746,7 @@ if ! [ "$dbprefixvar" = "database_prefix=0" ]; then
  echo
  echo "Checking for extra mysql databases..."
  mkdir -p /home/temp/
- mysql -e 'show databases' |grep -v ^cphulkd |grep -v ^information_schema |grep -v ^eximstats |grep -v ^horde | grep -v leechprotect |grep -v ^modsec |grep -v ^mysql |grep -v ^roundcube |grep -v ^Database > /home/temp/dblist.txt
+ mysql -e 'show databases' |grep -v ^cphulkd |grep -v ^information_schema |grep -v ^eximstats |grep -v ^horde | grep -v leechprotect |grep -v ^modsec |grep -v ^mysql |grep -v ^roundcube |grep -v ^Database | grep -v ^logaholicDB > /home/temp/dblist.txt
 #still have user_ databases, filter those.
  cp -rp /home/temp/dblist.txt /home/temp/extradbs.txt
  #get all users here, not userlist.
@@ -1169,6 +1176,8 @@ mysqldumpinitialsync() {
 echo
 #backup dbdumps folder on new server.
 ssh $ip -p$port  "test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%R`.bak}"
+#also check and backup /home/dbdumps on source server
+test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%R`.bak}
 #dump backups on current server and copy them over.
 mkdir -p /home/dbdumps
 if [ -s /root/dblist.txt ]; then
