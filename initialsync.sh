@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="May 25 2012"
+ver="Jul 23 2012"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -37,7 +37,7 @@ ver="May 25 2012"
 # Jan 16 2012 - implemented dbsync function.
 #  Added dnsclustercheck function.
 #  Tweaked apacheprepostcheck to print file contents and backup the conf file before copying.
-# Jan 17 2012 - Fixed mysqlup so mysql actually updates.
+# Jan 17 2012 - Fixed  so mysql actually updates.
 # Jan 18 2012 - Added hosts/dbsync file script code into this script
 # Jan 19 2012 - Added additional queries for finalsync userlist verification.
 #  Added rsync logging and adjusted scriptlog location
@@ -69,6 +69,10 @@ ver="May 25 2012"
 # May 18 - /home/dbdumps wasn't renamed on the new server during initial sync, this could cause issues if there was a previous migration. set to rename that folder with a date on hte new server.
 # May 21 - Also check and rename /home/dbdumps on source server | skip logaholicDB copying.
 # May 25 - switched Lower TTLS to perl as sed -i doesn't exist in old versions of sed
+# Jun 05 - Added logging for which users were being migrated.
+# Jun 22 - Quoted remotednscluster like 395ish, clarified text there a little.
+# Jun 28 - Removed rsync upgrade from single user sync.
+# Jul 23 - Remove safe-show-database and skip-locking from my.cnf if mysql is being upgraded to a version greater than 5.
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
@@ -189,7 +193,7 @@ while [ $singleuserloop == 0 ]; do
  if  [[ $sucheck = $userlist ]]; then
   echo "Found $userlist, restoring..."
   singleuserloop=1
-  rsyncupgrade
+  #rsyncupgrade
   getip        #asks for ip or checks a file to confirm destination
   accountcheck #if conflicting accounts are found, asks
   acctcopy
@@ -337,8 +341,8 @@ if [ "$dnrusers" ];then
   fi
 fi
 
-echo "Users slated for migration:"
-echo $userlist
+echo "Users slated for migration:" |tee -a $scriptlog
+echo $userlist |tee -a $scriptlog
 sleep 2
 }
 
@@ -392,9 +396,9 @@ if [ -d /var/cpanel/cluster ]; then
  localcluster=1
 fi
 remotednscluster=`ssh -p$port $ip "if [ -d /var/cpanel/cluster ]; then echo \"Remote DNS Clustering found.\" ; fi" `
-if [ $remotednscluster ]; then
+if [ "$remotednscluster" ]; then
  echo
- echo "Remote DNS clustering is detected, you shouldn't continue since restoring accounts has the potential to automatically update DNS for them in the cluster. Probably will be better to remove the remote server from the cluster before continuing." |tee -a $scriptlog
+ echo "DNS cluster on the new server is detected, you shouldn't continue since restoring accounts has the potential to automatically update DNS for them in the cluster. Probably will be better to remove the remote server from the cluster before continuing." |tee -a $scriptlog
  if yesNo 'Do you want to continue?'; then
   echo "Continuing..." |tee -a $scriptlog
  else
@@ -909,10 +913,15 @@ fi
 #mysql
 if [ $mysqlup ]; then
  echo "Reinstalling mysql..."
+ #mysql 5.5 won't start if safe-show-database and skip-locking are in my.cnf
  ssh $ip -p$port "
  sed -i.bak /mysql-version/d /var/cpanel/cpanel.config ; 
  echo mysql-version=$smysqlv >> /var/cpanel/cpanel.config ; 
  cp -rp /etc/my.cnf{,.bak} ; 
+ if [ $smysqlv > 5 ]; then
+  sed -i -e /safe-show-database/d /etc/my.cnf
+  sed -i -e /skip-locking/d /etc/my.cnf
+ fi
  cp -rp /var/lib/mysql{,.bak} ; 
  /scripts/mysqlup --force"
  echo "Mysql update completed, remember EA will need to be ran."
