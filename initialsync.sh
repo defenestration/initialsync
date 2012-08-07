@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Jul 23 2012"
+ver="Aug 07 2012"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -73,6 +73,9 @@ ver="Jul 23 2012"
 # Jun 22 - Quoted remotednscluster like 395ish, clarified text there a little.
 # Jun 28 - Removed rsync upgrade from single user sync.
 # Jul 23 - Remove safe-show-database and skip-locking from my.cnf if mysql is being upgraded to a version greater than 5.
+# Jul 27 - Trimmed extra check function out of mysqlsymlinkcheck, updated eximcheck in finalchecks to compare ports between servers.
+# Jul 31 - Added logvars function to simplify logging, added in some areas of script.
+# Aug 7  - Exclude databases with * in the name from mysql -e show databases
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
@@ -94,16 +97,18 @@ yesNo() { #generic yesNo function
 #repeat if yes or no option not valid
 while true; do
 #$* read ever parameter giving to the yesNo function which will be the message
- echo -n "$* (Y/N)? "
+ echo -n "$* (Y/N)? " | tee -a $scriptlog
  #junk holds the extra parameters yn holds the first parameters
  read yn junk
  case $yn in
   yes|Yes|YES|y|Y)
+    echo "y" >> $scriptlog
     return 0  ;;
   no|No|n|N|NO)
+    echo "n" >> $scriptlog
     return 1  ;;
   *) 
-    echo "Please enter y or n."
+    echo "Please enter y or n." | tee -a $scriptlog
  esac
 done    
 #usage:
@@ -186,12 +191,13 @@ echo
 echo "Single user sync." | tee -a $scriptlog
 singleuserloop=0
 while [ $singleuserloop == 0 ]; do 
- echo -n "Input name of the user to migrate:"
+ echo -n "Input name of the user to migrate:"  |tee -a $scriptlog
  read userlist
+ logvars userlist
  #check for error
  sucheck=`/bin/ls -A /var/cpanel/users | grep ^${userlist}$`
  if  [[ $sucheck = $userlist ]]; then
-  echo "Found $userlist, restoring..."
+  echo "Found $userlist, restoring..." | tee -a $scriptlog
   singleuserloop=1
   #rsyncupgrade
   getip        #asks for ip or checks a file to confirm destination
@@ -199,11 +205,11 @@ while [ $singleuserloop == 0 ]; do
   acctcopy
   didntrestore
   echo
-  echo "Removing ssh key from remote server."
+  echo "Removing ssh key from remote server." |tee -a $scriptlog
   ssh -p$port $ip "cp -rp ~/.ssh/authorized_keys{.syncbak,}"
 
  else
-  echo "Could not find $userlist."
+  echo "Could not find $userlist." |tee -a $scriptlog
  fi
 done
 }
@@ -214,24 +220,24 @@ echo "List sync." | tee -a $scriptlog
 listsyncvar=1
 #search for /root/users.txt and /home/users.txt
 if [ -s /root/userlist.txt ]; then
- echo "Found /root/userlist.txt"
+ echo "Found /root/userlist.txt" |tee -a $scriptlog
  sleep 3
  userlist=`cat /root/userlist.txt`
- echo "$userlist"
+ echo "$userlist" | tee -a $scriptlog
  basicsync
 elif [ -s /home/users.txt ]; then 
- echo "Found /home/users.txt"
+ echo "Found /home/users.txt" |tee -a $scriptlog
  sleep 3
  userlist=` cat /home/users.txt`
  echo "$userlist"
  basicsync
 elif [ -s /root/users.txt ]; then
- echo "found /root/users.txt"
+ echo "found /root/users.txt" |tee -a $scriptlog
  userlist=`cat /root/users.txt`
  sleep 3
  basicsync
 else 
- echo "Did not find users.txt in /root or /home"
+ echo "Did not find users.txt in /root or /home" |tee -a $scriptlog
  sleep 3
 fi
 }
@@ -309,10 +315,10 @@ dnrcheck() {
 #check and suggest to restore accounts from a previous failed migration
 #dnrusers is defined at the start
 echo
-echo "Checking for previous failed migration." 
+echo "Checking for previous failed migration."  |tee -a $scriptlog
 if [ "$dnrusers" ];then
  echo
- echo "Found users from failed migration in $dnr"
+ echo "Found users from failed migration in $dnr" |tee -a $scriptlog
  echo $dnrusers
  ls -l $dnr
  echo
@@ -321,18 +327,18 @@ if [ "$dnrusers" ];then
   cp -rpf ${dnr}{,.bak}
   > $dnr
  else 
-  echo "Okay, selecting all users for migration."
+  echo "Okay, selecting all users for migration." |tee -a $scriptlog
   userlist=`/bin/ls -A /var/cpanel/users`	
  fi
  else
   #check for userlist file
   if [ -s /root/userlist.txt ]; then
-   echo "/root/userlist.txt found, want to use this list?"
+   echo "/root/userlist.txt found, want to use this list?" |tee -a $scriptlog
    cat /root/userlist.txt
    if yesNo ; then
     userlist=`cat /root/userlist.txt`
    else
-    echo "Selecting all users."
+    echo "Selecting all users." |tee -a $scriptlog
     userlist=`/bin/ls -A /var/cpanel/users`
    fi
   else 
@@ -394,8 +400,10 @@ echo "Checking for DNS clustering..." |tee -a $scriptlog
 if [ -d /var/cpanel/cluster ]; then
  echo 'Local DNS Clustering found!' |tee -a $scriptlog
  localcluster=1
+ logvars localcluster
 fi
 remotednscluster=`ssh -p$port $ip "if [ -d /var/cpanel/cluster ]; then echo \"Remote DNS Clustering found.\" ; fi" `
+logvars remotednscluster
 if [ "$remotednscluster" ]; then
  echo
  echo "DNS cluster on the new server is detected, you shouldn't continue since restoring accounts has the potential to automatically update DNS for them in the cluster. Probably will be better to remove the remote server from the cluster before continuing." |tee -a $scriptlog
@@ -410,20 +418,21 @@ fi
 
 sslcertcheck() {
 #SSl cert checking.
-echo "Checking for SSL Certificates in apache conf."
+echo "Checking for SSL Certificates in apache conf." |tee -a $scriptlog
 crtcheck=`grep SSLCertificateFile /usr/local/apache/conf/httpd.conf`
+logvars crtcheck
 if [ "$crtcheck" ]; then
- echo "SSL Certificates detected."
+ echo "SSL Certificates detected." |tee -a $scriptlog
  echo
  for crt in `grep SSLCertificateFile /usr/local/apache/conf/httpd.conf |awk '{print $2}'`; do
-  echo $crt; openssl x509 -noout -in $crt -issuer  -subject  -dates
+  echo $crt; openssl x509 -noout -in $crt -issuer  -subject  -dates | tee -a $scriptlog
   echo 
  done
  echo
  echo "Enter to continue..."
  read
 else
- echo "No SSL Certificates found in httpd.conf."
+ echo "No SSL Certificates found in httpd.conf." |tee -a $scriptlog
  sleep 2 
 fi
 }
@@ -438,6 +447,7 @@ if [ -f /root/dns.txt ]; then
 else
  for user in $userlist; do cat /etc/userdomains | grep $user | cut -d: -f1 >> /root/domainlist.txt; done
  domainlist=`cat /root/domainlist.txt`
+ logvars domainlist
  for each in $domainlist; do echo $each\ `dig @8.8.8.8 NS +short $each |sed 's/\.$//g'`\ `dig @8.8.8.8 +short $each` ;done | grep -v \ \ | column -t > /root/dns.txt
  cat /root/dns.txt | sort -n +3 -2 | more
 fi
@@ -459,8 +469,9 @@ find /var/named/ -name \*.db -exec perl -pi -e 's/[0-9]{10}/'`date +%Y%m%d%H`'/g
 rndc reload
 #for the one time i encountered NSD
 nsdcheck=`ps aux |grep nsd |grep -v grep`
+logvars nsdcheck
 if [ "$nsdcheck" ]; then
- echo "Nsd found, reloading"
+ echo "Nsd found, reloading"|tee -a $scriptlog
  nsdc rebuild
  nsdc reload
 fi
@@ -493,6 +504,7 @@ else
  ipask
 fi
 sleep 1
+logvars ip
 }
 
 ipask() {
@@ -520,6 +532,7 @@ if [ -z $port ]; then
 fi
 echo $port > /root/dest.port.txt
 sleep 1
+logvars port
 
 }
 
@@ -566,21 +579,33 @@ echo "Checking for dedicated Ips." |tee -a $scriptlog
 # Otherwise uses same functionality as before.
 if [[ -f /etc/userdatadomains ]]; then
  preliminary_ip_check=`cat /etc/userdatadomains|sed -e 's/:/ /g' -e 's/==/ /g'|cut -d ' ' -f8|tr -d [:blank:]|sort|uniq`
+ logvars preliminary_ip_check
  server_main_ip=`cat /etc/wwwacct.conf|grep ADDR|cut -d ' ' -f2`
+ logvars server_main_ip
  for preliminary_ips in $preliminary_ip_check; do
+  logvars preliminary_ips
   if [[ $preliminary_ips != $server_main_ip ]]; then
    dedicated_ip_accounts="${dedicated_ip_accounts} $preliminary_ips"
+   logvars dedicated_ip_accounts
   fi
  done
  sourceipcount=`echo $dedicated_ip_accounts|sed -e 's/ /\n/g'|wc -l`
 else
  sourceipcount=`cat /etc/ips | grep ^[0-9] | wc -l`
 fi
+logvars sourceipcount
 # Check target server for number of dedicated IPs available
 destipcount=`ssh  $ip -p$port "cat /etc/ips |grep ^[0-9] | wc -l"`
+logvars destipcount
 if (( $sourceipcount <= $destipcount ));then
- echo "Source server has less or equal ips compared to destination, continuing."
- ipcheck=1
+ echo "Source server has less or equal ips compared to destination." | tee -a $scriptlog
+  if yesNo "Override IP check?
+ yes = Restore accounts to dedicated IPs (accouts will not all restore if there are not enough ips)
+ no  = Restore all to the main Shared ip" ;then
+   ipcheck=1
+  else
+   ipcheck=0
+  fi
 else
  ipcheck=0
  sleep 2
@@ -599,6 +624,7 @@ else
  fi
 fi
 sleep 1
+logvars ipcheck
 
 }
 
@@ -750,7 +776,7 @@ if ! [ "$dbprefixvar" = "database_prefix=0" ]; then
  echo
  echo "Checking for extra mysql databases..."
  mkdir -p /home/temp/
- mysql -e 'show databases' |grep -v ^cphulkd |grep -v ^information_schema |grep -v ^eximstats |grep -v ^horde | grep -v leechprotect |grep -v ^modsec |grep -v ^mysql |grep -v ^roundcube |grep -v ^Database | grep -v ^logaholicDB > /home/temp/dblist.txt
+ mysql -e 'show databases' |grep -v ^cphulkd |grep -v ^information_schema |grep -v ^eximstats |grep -v ^horde | grep -v leechprotect |grep -v ^modsec |grep -v ^mysql |grep -v ^roundcube |grep -v ^Database | grep -v ^logaholicDB |grep -v '*' > /home/temp/dblist.txt
 #still have user_ databases, filter those.
  cp -rp /home/temp/dblist.txt /home/temp/extradbs.txt
  #get all users here, not userlist.
@@ -789,12 +815,6 @@ if [ -L /var/lib/mysql ]; then
   echo "Exiting."
   exit 0
  fi
-fi
-mysqldatadir=`grep ^datadir /etc/my.cnf`
-if [ "$mysqldatadir" ]; then 
- echo "Found mysql data directory: $mysqldatadir"
- echo "Enter to continue."
- read
 fi
 }
 
@@ -956,19 +976,24 @@ echo "Packaging cpanel accounts and restoring on remote server..."
 syncstarttime=`date +%F.%T`
 #backup userlist variable
 echo $userlist > /root/userlist.txt
+logvars userlist
 #pack/send restore loop
 > $dnr
 mainip=`grep ADDR /etc/wwwacct.conf | awk '{print $2}'`
+logvars mainip
 for user in $userlist; do 
+ logvars user
  userip=`grep ^IP= /var/cpanel/users/$user|cut -d '=' -f2`
- echo "Packaging $user, logging to $scriptlog" 
+ logvars userip
+ echo "Packaging $user, logging to $scriptlog"  | tee -a $scriptlog
  /scripts/pkgacct --skiphomedir $user >> $scriptlog
- echo "Rsyncing cpmove-$user.tar.gz to $ip:/home/"
+ echo "Rsyncing cpmove-$user.tar.gz to $ip:/home/" | tee -a $scriptlog
  rsync -aqHlPe "ssh -p$port" /home*/cpmove-$user.tar.gz $ip:/home 
  echo "Restoring package" 
 #check for not enough ips
 #If keeping old ips.
  if [[ $keepoldips ]]; then
+ logvars keepoldips
   ssh $ip -p$port "mkdir -p /home/temp; 
   mv /home/cpmove-$user.tar.gz /home/temp/;
   if [[ $userip != $mainip ]]; then 
@@ -981,6 +1006,7 @@ for user in $userlist; do
  else
 #normal restore
   if [[ $ipcheck = 1 ]] ; then
+  logvars ipcheck
   #restore to dedicated ips
    ssh -t -n -q $ip -p$port "mkdir -p /home/temp; 
    mv /home/cpmove-$user.tar.gz /home/temp/;
@@ -1011,6 +1037,8 @@ rsynchomedirs() {
 #for home2 
 userhomelocal=`grep  ^$user: /etc/passwd |cut -d: -f6 `
 userhomeremote=`ssh $ip -p$port " grep  ^$user: /etc/passwd |cut -d: -f6"` 
+logvars userhomelocal
+logvars userhomeremote
 echo 
 
 #rsync
@@ -1048,6 +1076,8 @@ else
  #didn't find user on remote 
  echo $user >> $dnr
 fi
+echo 
+ 
 }
 
 didntrestore() {
@@ -1167,13 +1197,15 @@ fi
  
 
 #check for alternate exim ports
-eximcheck=`grep ^daemon_smtp_ports /etc/exim.conf`
-eximexpect="daemon_smtp_ports = 25 : 465"
-if [ "$eximcheck" != "$eximexpect" ]; then
+eximports=`grep ^daemon_smtp_ports /etc/exim.conf`
+eximportsremote=`ssh $ip -p$port 'grep daemon_smtp_ports /etc/exim.conf'`
+if [ "$eximports" != "$eximportsremote" ]; then
  echo 'Alternate smtp ports found!'
- echo $eximcheck
+ echo $eximports
  echo 'Set them up within WHM on the new server. (enter to continue)'
  read
+ else
+ echo 'Exim ports match!'
 fi
 
 echo "===End Final Checks==="
@@ -1280,14 +1312,14 @@ echo "Running final sync..." |tee -a $scriptlog
 finalsynccheck=1
 #check for previous migration
 if [ -s /root/userlist.txt ]; then 
- echo "Found /root/userlist.txt."
+ echo "Found /root/userlist.txt." |tee -a $scriptlog
  userlist=`cat /root/userlist.txt`
- echo "$userlist"
+ echo "$userlist" | tee -a $scriptlog
  if yesNo "Are these users correct?"; then
-  echo "Continuing."
+  echo "Continuing." |tee -a $scriptlog
  else
   if yesNo "Would you like to migrate all users?"; then
-   echo "Syncing all users."
+   echo "Syncing all users." |tee -a $scriptlog
    userlist=`/bin/ls -A /var/cpanel/users`
   else
    echo "Please edit /root/userlist.txt with the users you wish to migrate and rerun the script."
@@ -1295,9 +1327,9 @@ if [ -s /root/userlist.txt ]; then
   fi
  fi 
 else
- echo "Syncing all users."
+ echo "Syncing all users." |tee -a $scriptlog
  userlist=`/bin/ls -A /var/cpanel/users`
- echo "$userlist"
+ echo "$userlist" |tee -a $scriptlog
 fi
 sleep 3
 getip
@@ -1325,14 +1357,14 @@ syncstarttime=`date +%F.%T`
 rsyncupgrade
 
 if [ $stopservices ]; then
-echo "Stopping Services..."
+echo "Stopping Services..." |tee -a $scriptlog
 [ -s /etc/init.d/chkservd ] && /etc/init.d/chkservd stop
 /usr/local/cpanel/bin/tailwatchd --disable=Cpanel::TailWatch::ChkServd
 /etc/init.d/httpd stop
 /etc/init.d/exim stop
 /etc/init.d/cpanel stop
 else
- echo "Not stopping services."
+ echo "Not stopping services." |tee -a $scriptlog
 fi
 
 mysqldbfinalsync
@@ -1358,7 +1390,7 @@ if [ $copydns ]; then
  #for the one time i encountered NSD
  nsdcheck=`ps aux |grep nsd |grep -v grep`
  if [ "$nsdcheck" ]; then
-  echo "Nsd found, reloading"
+  echo "Nsd found, reloading" |tee -a $scriptlog
   nsdc rebuild
   nsdc reload
  fi
@@ -1367,7 +1399,7 @@ fi
 
 #restart services
 if [ $restartservices ]; then
- echo "Restarting services..."
+ echo "Restarting services..." |tee -a $scriptlog
  [ -s /etc/init.d/chkservd ] && /etc/init.d/chkservd start
  /etc/init.d/httpd start
  /etc/init.d/mysql start
@@ -1375,7 +1407,7 @@ if [ $restartservices ]; then
  /etc/init.d/cpanel start
  /usr/local/cpanel/bin/tailwatchd --enable=Cpanel::TailWatch::ChkServd
 else
- echo "Skipping restart of services..."
+ echo "Skipping restart of services..."| tee -a $scriptlog
 fi
 
 
@@ -1387,9 +1419,9 @@ echo
 #display mysqldump errors
 if [ -s /tmp/mysqldump.log ]; then
  echo 
- echo 'Errors detected during mysqldumps:'
- cat /tmp/mysqldump.log
- echo "End of errors from /tmp/mysqldump.log."
+ echo 'Errors detected during mysqldumps:' |tee -a $scriptlog
+ cat /tmp/mysqldump.log |tee -a $scriptlog
+ echo "End of errors from /tmp/mysqldump.log." |tee -a $scriptlog
  sleep 1
 fi
 
@@ -1419,14 +1451,18 @@ rsyncupgrade () {
 #rsync 3+ supports the --log-file option
 #get current rsync version
 RSYNCVERSION=`rsync --version |head -n1 |awk '{print $3}'`
+logvars RSYNCVERSION
 rsyncmajor=`echo $RSYNCVERSION |cut -d. -f1`
+logvars rsyncmajor
 if [ "$rsyncmajor" -lt 3 ]; then
- echo "Updating rsync..."
+ echo "Updating rsync..." |tee -a $scriptlog
  LOCALCENT=`cat /etc/redhat-release |awk '{print $3}'|cut -d '.' -f1`
+ logvars LOCALCENT
  LOCALARCH=`uname -i`
+ logvars LOCALARCH
  rpm -Uvh http://migration.sysres.liquidweb.com//rsync/rsync-3.0.0-1.el$LOCALCENT.rf.$LOCALARCH.rpm
 else
- echo "Rsync up to date."
+ echo "Rsync up to date." |tee -a $scriptlog
 fi
 
 #REMOTECENT=`ssh -p$PORT $USER@$IP "cat /etc/redhat-release" |awk '{print $3}'|cut -d '.' -f1`
@@ -1436,7 +1472,7 @@ fi
 
 rubygems() {
 echo 
-echo "Copying ruby gems over to new server."
+echo "Copying ruby gems over to new server." | tee -a $scriptlog
 gem list | tail -n+4 | awk '{print $1}' > /root/gemlist.txt
 rsync -avHPe "ssh -p$port" /root/gemlist.txt $ip:/root/
 ssh -p$port $ip " cat /root/gemlist.txt | xargs gem install "
@@ -1445,14 +1481,16 @@ ssh -p$port $ip " cat /root/gemlist.txt | xargs gem install "
 
 cpbackupcheck() {
 echo "
-Checking if cpanel backups are enabled on new server."
+Checking if cpanel backups are enabled on new server." |tee -a $scriptlog
 backupacctssetting=`ssh -p$port $ip "grep ^BACKUPACCTS /etc/cpbackup.conf" | awk '{print $2}' `
+logvars backupacctssetting
 backupenablesetting=`ssh -p$port $ip "grep ^BACKUPENABLE /etc/cpbackup.conf" | awk '{print $2}' `
+logvars backupenablesetting
 if [ $backupacctssetting = "yes" ]; then 
   #backupaccts is true, check for backupenable also
   if [ $backupenablesetting = "yes" ]; then
     #backupenable is also true
-    echo "Backups are enabled"
+    echo "Backups are enabled" |tee -a $scriptlog
   else
     cpbackupenable
   fi
@@ -1462,11 +1500,15 @@ fi
 }
 
 cpbackupenable(){
-echo "Cpanel backups are disabled on $ip"
+echo "Cpanel backups are disabled on $ip" | tee -a $scriptlog
 if yesNo "Do you want to enable backups on the remote server?"; then
     ssh -p$port $ip "sed -i.syncbak -e 's/^\(BACKUPACCTS\).*/\1 yes/g' -e 's/^\(BACKUPENABLE\).*/\1 yes/g' /etc/cpbackup.conf"
 fi
   
+}
+
+logvars() {
+echo "$1"="${!1}" > $scriptlog
 }
 
 main
