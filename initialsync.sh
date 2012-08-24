@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Aug 07 2012"
+ver="Aug 24 2012"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -76,6 +76,7 @@ ver="Aug 07 2012"
 # Jul 27 - Trimmed extra check function out of mysqlsymlinkcheck, updated eximcheck in finalchecks to compare ports between servers.
 # Jul 31 - Added logvars function to simplify logging, added in some areas of script.
 # Aug 7  - Exclude databases with * in the name from mysql -e show databases
+# Aug 24 - Fixed logvars function to not overwrite the log :D
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
@@ -90,8 +91,8 @@ rsyncflags="-avHl"
 > /tmp/migration.rsync.log
 mkdir -p $scriptlogdir
 touch $scriptlog
-echo "Version $ver" >> $scriptlog
-echo "Started $starttime" >> $scriptlog
+echo "Version $ver" |tee -a  $scriptlog
+echo "Started $starttime" | tee -a $scriptlog
 
 yesNo() { #generic yesNo function
 #repeat if yes or no option not valid
@@ -1508,7 +1509,7 @@ fi
 }
 
 logvars() {
-echo "$1"="${!1}" > $scriptlog
+echo "$1"="${!1}" >> $scriptlog
 }
 
 main
