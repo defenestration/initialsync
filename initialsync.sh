@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Aug 24 2012"
+ver="Aug 29 2012"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -77,6 +77,7 @@ ver="Aug 24 2012"
 # Jul 31 - Added logvars function to simplify logging, added in some areas of script.
 # Aug 7  - Exclude databases with * in the name from mysql -e show databases
 # Aug 24 - Fixed logvars function to not overwrite the log :D
+# Aug 29 - Added -y to gcc install
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
@@ -827,7 +828,7 @@ if [ "$gcccheck" ]; then
 else
  echo 'Gcc not found, running "yum install gcc" on remote server. You may have to hit "y" then Enter to install.'
  sleep 3
- ssh -p$port $ip "yum install gcc"
+ ssh -p$port $ip "yum -y install gcc"
 fi
 
 }
