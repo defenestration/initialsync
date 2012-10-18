@@ -1,1 +1,9 @@
 Migration script for cpanel servers. 
+
+Uses these scripts to install software:
+http://layer3.liquidweb.com/scripts/lwbake
+
+http://layer3.liquidweb.com/scripts/plBake/plBake
+
+This script is downloaded to the destination server on final sync to process the databases while data sync continues:
+migration.sysres.liquidweb.com/dbsync.sh
