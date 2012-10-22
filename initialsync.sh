@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Aug 29 2012"
+ver="Oct 22 2012"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -78,6 +78,10 @@ ver="Aug 29 2012"
 # Aug 7  - Exclude databases with * in the name from mysql -e show databases
 # Aug 24 - Fixed logvars function to not overwrite the log :D
 # Aug 29 - Added -y to gcc install
+# Sep 12 - Added more logging
+# Oct  2 - Option for Dedicated Ip in single user sync
+# Oct  5 - more logging to sshkeygen
+# Oct 22 - added option to remove ssh key at the end of final sync. 
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
@@ -196,6 +200,10 @@ while [ $singleuserloop == 0 ]; do
  echo -n "Input name of the user to migrate:"  |tee -a $scriptlog
  read userlist
  logvars userlist
+ if yesNo "Restore to dedicated ip?"; then
+   ipcheck=1 
+   logvars ipcheck
+ fi
  #check for error
  sucheck=`/bin/ls -A /var/cpanel/users | grep ^${userlist}$`
  if  [[ $sucheck = $userlist ]]; then
@@ -208,7 +216,7 @@ while [ $singleuserloop == 0 ]; do
   didntrestore
   echo
   echo "Removing ssh key from remote server." |tee -a $scriptlog
-  ssh -p$port $ip "cp -rp ~/.ssh/authorized_keys{.syncbak,}"
+  ssh -p$port $ip "rm ~/.ssh/authorized_keys ; cp -rp ~/.ssh/authorized_keys{.syncbak,}"
 
  else
   echo "Could not find $userlist." |tee -a $scriptlog
@@ -540,10 +548,13 @@ logvars port
 
 sshkeygen() {
 echo
-echo "Generating SSH keys" |tee -a $scriptlog
-if ! [ -f ~/.ssh/id_rsa ]; then
+if ! [ -f ~/.ssh/id_rsa ]; then  
+ echo "Generating SSH key..." |tee -a $scriptlog
  ssh-keygen -q -N "" -t rsa -f ~/.ssh/id_rsa
+else
+  echo "SSH key found." | tee -a $scriptlog
 fi
+echo "Copying Key to remote server..." | tee -a $scriptlog
 cat ~/.ssh/id_rsa.pub | ssh $ip -p$port "cp -rp ~/.ssh/authorized_keys{,.syncbak} ; mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
 ssh $ip -p$port "echo \'Connected!\';  cat /etc/hosts| grep $ip " 
 }
@@ -1007,8 +1018,8 @@ for user in $userlist; do
   
  else
 #normal restore
-  if [[ $ipcheck = 1 ]] ; then
   logvars ipcheck
+  if [[ $ipcheck = 1 ]] ; then
   #restore to dedicated ips
    ssh -t -n -q $ip -p$port "mkdir -p /home/temp; 
    mv /home/cpmove-$user.tar.gz /home/temp/;
@@ -1101,8 +1112,8 @@ if [ -s /tmp/remotefail.txt ]; then
 fi
 
 if [ -s $dnr ]; then 
- echo '--did not restore--'
- cat $dnr
+ echo '--did not restore--' |tee -a $scriptlog
+ cat $dnr | tee -a $scriptlog
  echo '-------------------'
  echo 'You can re-run this script and run the basic sync to restore these users if desired.'
  echo 'Press enter to continue...'
@@ -1433,6 +1444,14 @@ if [ $stopservices ]; then
  if [ $restartservices ];then echo "Restarted services"; else echo "Didnt restart services"; fi
 fi
 [ $copydns ] && echo "DNS was copied over from new server."
+
+if yesNo "Remove SSH key from new server?"; then
+  ssh -p${port} root@$ip "
+  mv ~/.ssh/authorized_keys{,.initialsync.`date +%F`}; 
+  if [ -f ~/.ssh/authorized_keys.syncbak ]; then 
+    cp -rp ~/.ssh/authorized_keys{.syncbak,}; 
+  fi"
+fi
 
 echo 'Final sync complete, check the screen "dbsync" on the remote server to ensure all databases imported correctly.'
 }
