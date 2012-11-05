@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Oct 22 2012"
+ver="Nov 05 2012"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -9,6 +9,8 @@ ver="Oct 22 2012"
 # make ssh have quieter output? tried and failed before though.
 # moar logging!
 # sslcheck - sanitize * in cert file names.
+# initialsync doesnt log the questions to the yesNo tool, just the answer :O
+#
 
 # Presync:
 # streamline initial choice logic
@@ -82,11 +84,14 @@ ver="Oct 22 2012"
 # Oct  2 - Option for Dedicated Ip in single user sync
 # Oct  5 - more logging to sshkeygen
 # Oct 22 - added option to remove ssh key at the end of final sync. 
+# Nov  1 - added logit function, claned up some yesNo questions
+# Nov  4 - logging during cpanel account restore. 
+
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
-scriptlogdir=/home/temp/
-scriptlog=/home/temp/initialsync.$starttime.log
+scriptlogdir="/home/temp"
+scriptlog="${scriptlogdir}/initialsync.${starttime}.log"
 dnr=/home/didnotrestore.txt
 rsyncflags="-avHl"
 [ -s $dnr ] && dnrusers=`cat $dnr`
@@ -96,14 +101,18 @@ rsyncflags="-avHl"
 > /tmp/migration.rsync.log
 mkdir -p $scriptlogdir
 touch $scriptlog
-echo "Version $ver" |tee -a  $scriptlog
-echo "Started $starttime" | tee -a $scriptlog
+
+logit() {
+tee -a $scriptlog
+}
+echo "Version $ver" | logit
+echo "Started $starttime" | logit
 
 yesNo() { #generic yesNo function
 #repeat if yes or no option not valid
 while true; do
 #$* read ever parameter giving to the yesNo function which will be the message
- echo -n "$* (Y/N)? " | tee -a $scriptlog
+ echo -n "$* (Y/N)? " | logit
  #junk holds the extra parameters yn holds the first parameters
  read yn junk
  case $yn in
@@ -114,7 +123,7 @@ while true; do
     echo "n" >> $scriptlog
     return 1  ;;
   *) 
-    echo "Please enter y or n." | tee -a $scriptlog
+    echo "Please enter y or n." | logit
  esac
 done    
 #usage:
@@ -176,17 +185,17 @@ while [ $mainloop == 0 ] ; do
 done
 sleep 3
 echo
-echo "Started at $starttime"
-[ $syncstarttime ] && echo "Sync started at $syncstarttime" |tee -a $scriptlog
-[ $syncendtime ] &&  echo "Sync finished at $syncendtime" |tee -a $scriptlog
-echo "Finished at `date +%F.%T`" | tee -a $scriptlog
-echo 'Done!'
+echo "Started at $starttime" |logit 
+[ $syncstarttime ] && echo "Sync started at $syncstarttime" |logit
+[ $syncendtime ] &&  echo "Sync finished at $syncendtime" |logit
+echo "Finished at `date +%F.%T`" | logit
+echo 'Done!' | logit 
 exit 0
 }
 
 dbsync() {
 dbonlysync=1
-echo "Database only sync." |tee -a $scriptlog
+echo "Database only sync." |logit
 userlist=`/bin/ls -A /var/cpanel/users`
 getip        #asks for ip or checks a file to confirm destination
 mysqldbfinalsync
@@ -194,10 +203,10 @@ mysqldbfinalsync
 #sync types
 singleuser() {
 echo
-echo "Single user sync." | tee -a $scriptlog
+echo "Single user sync." | logit
 singleuserloop=0
 while [ $singleuserloop == 0 ]; do 
- echo -n "Input name of the user to migrate:"  |tee -a $scriptlog
+ echo -n "Input name of the user to migrate:"  |logit
  read userlist
  logvars userlist
  if yesNo "Restore to dedicated ip?"; then
@@ -207,7 +216,7 @@ while [ $singleuserloop == 0 ]; do
  #check for error
  sucheck=`/bin/ls -A /var/cpanel/users | grep ^${userlist}$`
  if  [[ $sucheck = $userlist ]]; then
-  echo "Found $userlist, restoring..." | tee -a $scriptlog
+  echo "Found $userlist, restoring..." | logit
   singleuserloop=1
   #rsyncupgrade
   getip        #asks for ip or checks a file to confirm destination
@@ -215,53 +224,54 @@ while [ $singleuserloop == 0 ]; do
   acctcopy
   didntrestore
   echo
-  echo "Removing ssh key from remote server." |tee -a $scriptlog
+  echo "Removing ssh key from remote server." |logit
   ssh -p$port $ip "rm ~/.ssh/authorized_keys ; cp -rp ~/.ssh/authorized_keys{.syncbak,}"
 
  else
-  echo "Could not find $userlist." |tee -a $scriptlog
+  echo "Could not find $userlist." |logit
  fi
 done
 }
 
 listsync() {
 echo
-echo "List sync." | tee -a $scriptlog
+echo "List sync." | logit
 listsyncvar=1
 #search for /root/users.txt and /home/users.txt
 if [ -s /root/userlist.txt ]; then
- echo "Found /root/userlist.txt" |tee -a $scriptlog
+ echo "Found /root/userlist.txt" |logit
  sleep 3
  userlist=`cat /root/userlist.txt`
- echo "$userlist" | tee -a $scriptlog
+ echo "$userlist" | logit
  basicsync
 elif [ -s /home/users.txt ]; then 
- echo "Found /home/users.txt" |tee -a $scriptlog
+ echo "Found /home/users.txt" |logit
  sleep 3
  userlist=` cat /home/users.txt`
  echo "$userlist"
  basicsync
 elif [ -s /root/users.txt ]; then
- echo "found /root/users.txt" |tee -a $scriptlog
+ echo "found /root/users.txt" |logit
  userlist=`cat /root/users.txt`
  sleep 3
  basicsync
 else 
- echo "Did not find users.txt in /root or /home" |tee -a $scriptlog
+ echo "Did not find users.txt in /root or /home" |logit
  sleep 3
 fi
+logvars userlist
 }
 
 basicsync(){
 echo
-echo "Basic Sync started" |tee -a $scriptlog
+echo "Basic Sync started" |logit
 presync
 copyaccounts
 }
 
 fullsync() {
 echo
-echo "Full sync started" |tee -a $scriptlog
+echo "Full sync started" |logit
 #check versions,  run ea, upcp, match php versions, lots of good stuff
 presync
 versionmatching
@@ -270,14 +280,14 @@ copyaccounts
 
 keepipsync() {
 echo
-echo "Sync keeping old dedicated ips." |tee -a $scriptlog
+echo "Sync keeping old dedicated ips." |logit
 keepoldips=1
 fullsync
 }
 
 #Main sync procecures
 presync() {
-echo "Running Pre-sync functions..." |tee -a $scriptlog
+echo "Running Pre-sync functions..." |logit
 #get ips and such
 if ! [ "${singleuserloop}${listsyncvar}" ];then 
  dnrcheck     #userlist is defined here
@@ -295,7 +305,7 @@ mysqlsymlinkcheck
 
 versionmatching() {
 #only full syncs
-echo "Running version matching..." |tee -a $scriptlog
+echo "Running version matching..." |logit
 nameservers
 gcccheck #needs to be before upcp, ea
 upcp
@@ -310,7 +320,7 @@ rubygems
 }
 
 copyaccounts() {
-echo "Starting account copying functions..." |tee -a $scriptlog
+echo "Starting account copying functions..." |logit
 acctcopy
 didntrestore
 mysqlextradbcheck
@@ -325,10 +335,10 @@ dnrcheck() {
 #check and suggest to restore accounts from a previous failed migration
 #dnrusers is defined at the start
 echo
-echo "Checking for previous failed migration."  |tee -a $scriptlog
+echo "Checking for previous failed migration."  |logit
 if [ "$dnrusers" ];then
  echo
- echo "Found users from failed migration in $dnr" |tee -a $scriptlog
+ echo "Found users from failed migration in $dnr" |logit
  echo $dnrusers
  ls -l $dnr
  echo
@@ -337,18 +347,18 @@ if [ "$dnrusers" ];then
   cp -rpf ${dnr}{,.bak}
   > $dnr
  else 
-  echo "Okay, selecting all users for migration." |tee -a $scriptlog
+  echo "Okay, selecting all users for migration." |logit
   userlist=`/bin/ls -A /var/cpanel/users`	
  fi
  else
   #check for userlist file
   if [ -s /root/userlist.txt ]; then
-   echo "/root/userlist.txt found, want to use this list?" |tee -a $scriptlog
-   cat /root/userlist.txt
-   if yesNo ; then
+   echo "/root/userlist.txt found: " |logit
+   cat /root/userlist.txt | logit
+   if yesNo "Do you want to use this list from /root/userlist.txt?" ; then
     userlist=`cat /root/userlist.txt`
    else
-    echo "Selecting all users." |tee -a $scriptlog
+    echo "Selecting all users." |logit
     userlist=`/bin/ls -A /var/cpanel/users`
    fi
   else 
@@ -357,14 +367,14 @@ if [ "$dnrusers" ];then
   fi
 fi
 
-echo "Users slated for migration:" |tee -a $scriptlog
-echo $userlist |tee -a $scriptlog
+echo "Users slated for migration:" |logit
+echo $userlist |logit
 sleep 2
 }
 
 hostsgen() {
 echo
-echo "Generating hosts file..." 
+echo "Generating hosts file..." | logit
 #ssh $ip -p$port "wget -O /scripts/hosts.sh http://migration.sysres.liquidweb.com/hosts.sh ; bash /scripts/hosts.sh" 
 cat > /scripts/hosts.sh <<'EOF'
 #!/bin/bash
@@ -406,9 +416,9 @@ sleep 2
 
 dnsclustercheck() {
 echo 
-echo "Checking for DNS clustering..." |tee -a $scriptlog
+echo "Checking for DNS clustering..." |logit
 if [ -d /var/cpanel/cluster ]; then
- echo 'Local DNS Clustering found!' |tee -a $scriptlog
+ echo 'Local DNS Clustering found!' |logit
  localcluster=1
  logvars localcluster
 fi
@@ -416,9 +426,9 @@ remotednscluster=`ssh -p$port $ip "if [ -d /var/cpanel/cluster ]; then echo \"Re
 logvars remotednscluster
 if [ "$remotednscluster" ]; then
  echo
- echo "DNS cluster on the new server is detected, you shouldn't continue since restoring accounts has the potential to automatically update DNS for them in the cluster. Probably will be better to remove the remote server from the cluster before continuing." |tee -a $scriptlog
+ echo "DNS cluster on the new server is detected, you shouldn't continue since restoring accounts has the potential to automatically update DNS for them in the cluster. Probably will be better to remove the remote server from the cluster before continuing." |logit
  if yesNo 'Do you want to continue?'; then
-  echo "Continuing..." |tee -a $scriptlog
+  echo "Continuing..." |logit
  else
   exit 0
  fi
@@ -428,30 +438,30 @@ fi
 
 sslcertcheck() {
 #SSl cert checking.
-echo "Checking for SSL Certificates in apache conf." |tee -a $scriptlog
+echo "Checking for SSL Certificates in apache conf." |logit
 crtcheck=`grep SSLCertificateFile /usr/local/apache/conf/httpd.conf`
 logvars crtcheck
 if [ "$crtcheck" ]; then
- echo "SSL Certificates detected." |tee -a $scriptlog
+ echo "SSL Certificates detected." |logit
  echo
  for crt in `grep SSLCertificateFile /usr/local/apache/conf/httpd.conf |awk '{print $2}'`; do
-  echo $crt; openssl x509 -noout -in $crt -issuer  -subject  -dates | tee -a $scriptlog
+  echo $crt; openssl x509 -noout -in $crt -issuer  -subject  -dates | logit
   echo 
  done
  echo
  echo "Enter to continue..."
  read
 else
- echo "No SSL Certificates found in httpd.conf." |tee -a $scriptlog
+ echo "No SSL Certificates found in httpd.conf." |logit
  sleep 2 
 fi
 }
 
 dnscheck() {
 echo
-echo "Checking Current dns..." |tee -a $scriptlog
+echo "Checking Current dns..." |logit
 if [ -f /root/dns.txt ]; then
- echo "Found /root/dns.txt"
+ echo "Found /root/dns.txt" |logit
  sleep 3
  cat /root/dns.txt | sort -n +3 -2 | more
 else
@@ -467,7 +477,7 @@ read
 
 lowerttls() {
 echo
-echo "Lowering TTLs..." |tee -a $scriptlog
+echo "Lowering TTLs..." |logit
 #lower ttls, switched to find command for a lot of domains
 #sed -i.lwbak -e 's/^\$TTL.*/$TTL 300/g' -e 's/[0-9]\{10\}/'`date +%Y%m%d%H`'/g' /var/named/*.db
 #find /var/named/ -name \*.db -exec sed -i.lwbak -e 's/^\$TTL.*/$TTL 300/g' -e 's/[0-9]\{10\}/'`date +%Y%m%d%H`'/g' {} \;
@@ -481,7 +491,7 @@ rndc reload
 nsdcheck=`ps aux |grep nsd |grep -v grep`
 logvars nsdcheck
 if [ "$nsdcheck" ]; then
- echo "Nsd found, reloading"|tee -a $scriptlog
+ echo "Nsd found, reloading"|logit
  nsdc rebuild
  nsdc reload
 fi
@@ -489,13 +499,13 @@ fi
 
 getip() {
 echo
-echo "Getting Ip for destination server..." |tee -a $scriptlog
+echo "Getting Ip for destination server..." |logit
 #check for previous migration, just in case.
 ipfile=/root/dest.ip.txt
 if [ -f $ipfile ]; then
  ip=`cat $ipfile`
  echo
- echo "Ip from previous migration found `echo $ip`"  
+ echo "Ip from previous migration found `echo $ip`"  |logit 
  getport
  #echo "Testing connetion to remote server..."
  #echo
@@ -504,7 +514,7 @@ if [ -f $ipfile ]; then
  #echo "Test complete."
  echo
  if yesNo "Is $ip the server you want?  Otherwise enter No to input new ip." ;then
-  echo "Ok, continuing with $ip"
+  echo "Ok, continuing with $ip" |logit
   sshkeygen
  else
   rm -rf /root/dest.port.txt
@@ -528,7 +538,7 @@ sshkeygen
 
 getport() {
 echo
-echo "Getting ssh port." |tee -a $scriptlog
+echo "Getting ssh port." |logit
 if [ -s /root/dest.port.txt ]; then
  port=`cat /root/dest.port.txt`
  echo "Previous Ssh port found ($port)."
@@ -549,12 +559,12 @@ logvars port
 sshkeygen() {
 echo
 if ! [ -f ~/.ssh/id_rsa ]; then  
- echo "Generating SSH key..." |tee -a $scriptlog
+ echo "Generating SSH key..." |logit
  ssh-keygen -q -N "" -t rsa -f ~/.ssh/id_rsa
 else
-  echo "SSH key found." | tee -a $scriptlog
+  echo "SSH key found." | logit
 fi
-echo "Copying Key to remote server..." | tee -a $scriptlog
+echo "Copying Key to remote server..." | logit
 cat ~/.ssh/id_rsa.pub | ssh $ip -p$port "cp -rp ~/.ssh/authorized_keys{,.syncbak} ; mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
 ssh $ip -p$port "echo \'Connected!\';  cat /etc/hosts| grep $ip " 
 }
@@ -562,12 +572,12 @@ ssh $ip -p$port "echo \'Connected!\';  cat /etc/hosts| grep $ip "
 
 accountcheck() { #check for users with the same name on each server:
 echo
-echo "Comparing accounts with destination server" |tee -a $scriptlog
+echo "Comparing accounts with destination server" |logit
 for user in $userlist ; do ssh -qt $ip -p$port " if [ -f /var/cpanel/users/$user ]; then echo $user;fi"  ; done > /root/userexists.txt
 #check for userexists.txt greater than 0
 if [ -s /root/userexists.txt ]; then
- echo 'Accounts that conflict with the destination server.'
- cat /root/userexists.txt
+ echo 'Accounts that conflict with the destination server.' |logit
+ cat /root/userexists.txt |logit
  if yesNo "Y to continue, N to exit."; then
   echo "Continuing..."
  else
@@ -580,14 +590,14 @@ fi
 dedipcheck() { #check for same amount of dedicated ips
 
 if [ $keepoldips ];then 
- echo "Keeping old ips, copying ips file over."|tee -a $scriptlog
+ echo "Keeping old ips, copying ips file over."|logit
  ssh $ip -p$port "cp -rp /etc/ips{,.bak}"
  rsync -aqHe "ssh -p${port}" /etc/ips $ip:/etc/
  ssh $ip -p$port "/etc/init.d/ipaliases restart"
 fi
 
 echo
-echo "Checking for dedicated Ips." |tee -a $scriptlog
+echo "Checking for dedicated Ips." |logit
 # If /etc/userdatadomains exists, calculate dedicated IPs based on usage.
 # Otherwise uses same functionality as before.
 if [[ -f /etc/userdatadomains ]]; then
@@ -611,29 +621,34 @@ logvars sourceipcount
 destipcount=`ssh  $ip -p$port "cat /etc/ips |grep ^[0-9] | wc -l"`
 logvars destipcount
 if (( $sourceipcount <= $destipcount ));then
- echo "Source server has less or equal ips compared to destination." | tee -a $scriptlog
+ echo "Source server has less or equal ips compared to destination." | logit
   if yesNo "Override IP check?
  yes = Restore accounts to dedicated IPs (accouts will not all restore if there are not enough ips)
  no  = Restore all to the main Shared ip" ;then
    ipcheck=1
+   logvars ipcheck
   else
    ipcheck=0
+   logvars ipcheck
   fi
 else
  ipcheck=0
+ logvars ipcheck
  sleep 2
  /scripts/ipusage
  echo 
- echo "Not enough dedicated IPs found on destination server ($destipcount) when compared to source server ($sourceipcount)."
+ echo "Not enough dedicated IPs found on destination server ($destipcount) when compared to source server ($sourceipcount)." |logit
 # echo "If you are sure the server isn't using all its IPs for accounts you can override the Ip check by answering Yes. Otherwise answer No to put all sites on the main shared IP."
  if yesNo "Override IP check?
  yes = Try to restore accounts to dedicated IPs anyway (accouts will not all restore if there are not enough ips)
  no  = Restore all to the main Shared ip" ;then
   ipcheck=1
-  echo "Restoring to dedicated ips."
+  logvars ipcheck
+  echo "Restoring to dedicated ips." |logit
  else
   ipcheck=0
-  echo "Restoring to main shared ip."
+  logvars ipcheck
+  echo "Restoring to main shared ip." |logit
  fi
 fi
 sleep 1
@@ -642,9 +657,9 @@ logvars ipcheck
 }
 
 nameservers() {
-echo "Set nameservers on remote host?"
-grep ^NS[\ 0-9]  /etc/wwwacct.conf 
-if yesNo ;then
+echo "Current nameservers:" | logit
+grep ^NS[\ 0-9]  /etc/wwwacct.conf | logit
+if yesNo "Set nameservers on remote host?" ;then
  grep ^NS[\ 0-9]  /etc/wwwacct.conf > /tmp/nameservers.txt
  rsync -avHPe "ssh -p$port" /tmp/nameservers.txt $ip:/tmp/
  ssh $sshopts $ip -p$port "cp -rp /etc/wwwacct.conf{,.bak} ;
@@ -668,11 +683,10 @@ for file in $apachefilelist; do
  if [ -s /usr/local/apache/conf/includes/$file ]; then
   #file exists and is non-zero size
   echo
-  echo "/usr/local/apache/conf/includes/$file"
-  cat /usr/local/apache/conf/includes/$file
+  echo "/usr/local/apache/conf/includes/$file" | logit
+  cat /usr/local/apache/conf/includes/$file | logit
   echo
-  echo "Found extra apache configuration in $file, copy to new server?"
-  if yesNo ; then
+  if yesNo "Found extra apache configuration in $file, copy to new server?";  then
    ssh -p$port $ip "mv /usr/local/apache/conf/includes/$file{,.bak}"
    rsync -avHPe "ssh -p$port" /usr/local/apache/conf/includes/$file $ip:/usr/local/apache/conf/includes/
   fi
@@ -682,53 +696,66 @@ done
 
 phpapicheck() { #run after EA so php4 can be supported
 echo
-echo "Matching php handlers..."
+echo "Matching php handlers..." |logit
 /usr/local/cpanel/bin/rebuild_phpconf --current > /tmp/phpconf
 #check for ea failure message
 if [ "`cat /tmp/phpconf`" == "Sorry, php has not yet been configured with EA3 tools" ]; then
- echo "EA fail message."
+ echo "EA fail message." |logit
  phpapicheck=1
+ logvars phpapicheck
 else
 
  phpver=`grep ^DEFAULT\ PHP /tmp/phpconf |awk '{print $3}'`
  php4sapi=`grep ^PHP4\ SAPI /tmp/phpconf |awk '{print $3}'`
  php5sapi=`grep ^PHP5\ SAPI /tmp/phpconf |awk '{print $3}'`
  phpsuexec=`grep ^SUEXEC /tmp/phpconf |awk '{print $2}'`
+ logvars phpver
+ logvars php4sapi
+ logvars php5sapi
+ logvars phpsuexec
 #php suexec will be either 'enabled' or 'not installed', check if its not enabled. can set the param with 1 or 0 also.
  if [ "$phpsuexec" != enabled ]; then
   phpsuexec=0
+  logvars phpsuexec
  fi
  #check if phpver is 4 or 5, old EA versions will fail the rebuild_phpconf command
  case $phpver in
  [45]) 
  ssh $ip -p$port "/usr/local/cpanel/bin/rebuild_phpconf --current > /tmp/phpconf.`date +%F.%T`.txt ;/usr/local/cpanel/bin/rebuild_phpconf $phpver $php4sapi $php5sapi $phpsuexec "  
  ;;
- *)  echo "Got unexpected output from /usr/local/cpanel/bin/rebuild_phpconf --current, skipping..." 
-     phpapicheck=1 ;;
+ *)  echo "Got unexpected output from /usr/local/cpanel/bin/rebuild_phpconf --current, skipping..." |logit
+     phpapicheck=1 
+     logvars phpapicheck
+     ;;
  esac
 fi
 }
 
 phpmemcheck(){
 echo
-echo "Checking php memory limit..."
+echo "Checking php memory limit..." |logit 
 phpmem=`php -i |grep ^memory_limit |cut -d" " -f3`
 rphpmem=`ssh $ip -p$port 'php -i |grep ^memory_limit |cut -d" " -f3'`
+logvars phpmem
+logvars rphpmem
 if [ $phpmem ]; then
  if [ $rphpmem ]; then
   if [[ $phpmem != $rphpmem ]]; then
    phpmemcmd=`echo 'sed -i '\''s/\(memory_limit\ =\ \)[0-9]*M/\1'$phpmem'/'\'' /usr/local/lib/php.ini'`
+   logvars phpmemcmd
    ssh $ip -p$port "cp -rp /usr/local/lib/php.ini{,.bak} ; $phpmemcmd ; service httpd restart" 
   else
-   echo "Old memorylimit $phpmem matches new $rphpmem, skipping..."
+   echo "Old memorylimit $phpmem matches new $rphpmem, skipping..." |logit
   fi
  else 
-  echo "Remote php memory_limit not found."
+  echo "Remote php memory_limit not found." |logit
   phpmemcheck=1
+  logvars phpmemcheck
  fi
 else
- echo "Local php memory_limit not found."
+ echo "Local php memory_limit not found." |logit
  phpmemcheck=1
+ logvars phpmemcheck
 fi
 
 }
@@ -736,7 +763,7 @@ fi
 thirdparty() {
 #look for random apps to install here, they are installed in installprogs
 echo
-echo "Checking for 3rd party apps..."
+echo "Checking for 3rd party apps..." |logit
 
 #Check for ffmpeg
 ffmpeg=`which ffmpeg`
@@ -757,26 +784,38 @@ postgres=`ps aux |grep -e 'postgres' |grep -v grep |tail -n1`
 xcachefound=`ps aux | grep -e 'xcache' | grep -v grep | tail -n1`
 eaccelfound=`ps aux | grep -e 'eaccelerator' | grep -v grep |tail -n1`
 nginxfound=`ps aux | grep  -e 'nginx' |grep -v grep| tail -n1`
+logvars ffmpeg
+logvars imagick
+logvars memcache
+logvars java
+logvars postgres
+logvars xcachefound
+logvars eaccelfound
+logvars nginxfound
 }
 
 mysqlcheck() {
 #mysql
 echo
-echo "Checking mysql versions..."
+echo "Checking mysql versions..." |logit
 smysqlv=`grep -i mysql-version /var/cpanel/cpanel.config | cut -d= -f2`
 dmysqlv=`ssh $ip -p$port 'grep -i mysql-version /var/cpanel/cpanel.config | cut -d= -f2'`
-echo "Source: $smysqlv"
-echo "Destination: $dmysqlv"
+logvars smysqlv
+logvars dmysqlv
+echo "Source: $smysqlv" | logit
+echo "Destination: $dmysqlv" | logit
 if [ $smysqlv == $dmysqlv ]; then  
- echo "Mysql versions match."; 
+ echo "Mysql versions match." | logit
 else 
- echo "Mysql versions do not match."
+ echo "Mysql versions do not match." | logit 
  if yesNo "Change remote server's mysql version to $smysqlv?" ; then
   #get remote php version now since mysql will not allow us to check later.
   phpvr=`ssh $ip -p$port "php -v |head -n1 |cut -d\" \" -f2"`
   mysqlup=1
+  logvars phpvr
+  logvars mysqlup
  else
-  echo "Not updating mysql."
+  echo "Not updating mysql." |logit
  fi
 fi
 sleep 1
@@ -785,9 +824,10 @@ sleep 1
 mysqlextradbcheck() { #find dbs created outside of cpanel, with potential to copy them over.
 #skip this fucntion if the username prefix is disabled.
 dbprefixvar=`grep database_prefix /var/cpanel/cpanel.config `
+logvars dbprefixvar
 if ! [ "$dbprefixvar" = "database_prefix=0" ]; then
  echo
- echo "Checking for extra mysql databases..."
+ echo "Checking for extra mysql databases..." |logit
  mkdir -p /home/temp/
  mysql -e 'show databases' |grep -v ^cphulkd |grep -v ^information_schema |grep -v ^eximstats |grep -v ^horde | grep -v leechprotect |grep -v ^modsec |grep -v ^mysql |grep -v ^roundcube |grep -v ^Database | grep -v ^logaholicDB |grep -v '*' > /home/temp/dblist.txt
 #still have user_ databases, filter those.
@@ -832,12 +872,13 @@ fi
 }
 
 gcccheck() {
-echo 'Checking for gcc on new server, because some newer storm servers dont have gcc installed so EA and possibly other things will fail to install.'
+echo 'Checking for gcc on new server, because some newer storm servers dont have gcc installed so EA and possibly other things will fail to install.' |logit 
 gcccheck=$(ssh -p$port $ip "rpm -qa gcc")
+logvars gcccheck
 if [ "$gcccheck" ]; then
- echo "Gcc found, continuing..."
+ echo "Gcc found, continuing..." |logit
 else
- echo 'Gcc not found, running "yum install gcc" on remote server. You may have to hit "y" then Enter to install.'
+ echo 'Gcc not found, running "yum install gcc" on remote server. You may have to hit "y" then Enter to install.' |logit 
  sleep 3
  ssh -p$port $ip "yum -y install gcc"
 fi
@@ -846,16 +887,19 @@ fi
 
 upcp() {
 echo
-echo "Checking Cpanel versions..."
+echo "Checking Cpanel versions..." | logit
 #upcp if local version is higher than remote
 cpver=`cat /usr/local/cpanel/version`
 rcpver=`ssh $ip -p$port "cat /usr/local/cpanel/version"`
+logvars cpver
+logvars rcpver
 if  [[ $cpver > $rcpver ]]; then
- echo "This server has $cpver"
- echo "Remote server has $rcpver"
+ echo "This server has $cpver" | logit
+ echo "Remote server has $rcpver" | logit
  if yesNo "Run Upcp on remote server?" ; then
-  echo "Running upcp..."
+  echo "Upcp will be ran when the sync begins." | logit
   upcp=1
+  logvars upcp
   #ssh $ip -p$port "/scripts/upcp"
  else
   echo "Okay, fine, not running upcp." 
@@ -998,9 +1042,9 @@ for user in $userlist; do
  logvars user
  userip=`grep ^IP= /var/cpanel/users/$user|cut -d '=' -f2`
  logvars userip
- echo "Packaging $user, logging to $scriptlog"  | tee -a $scriptlog
+ echo "Packaging $user, logging to $scriptlog"  | logit
  /scripts/pkgacct --skiphomedir $user >> $scriptlog
- echo "Rsyncing cpmove-$user.tar.gz to $ip:/home/" | tee -a $scriptlog
+ echo "Rsyncing cpmove-$user.tar.gz to $ip:/home/" | logit
  rsync -aqHlPe "ssh -p$port" /home*/cpmove-$user.tar.gz $ip:/home 
  echo "Restoring package" 
 #check for not enough ips
@@ -1014,7 +1058,7 @@ for user in $userlist; do
   else
    /scripts/restorepkg /home/temp/cpmove-$user.tar.gz ; 
   fi
-  mv /home/temp/cpmove-$user.tar.gz /home/"
+  mv /home/temp/cpmove-$user.tar.gz /home/" | logit
   
  else
 #normal restore
@@ -1028,13 +1072,13 @@ for user in $userlist; do
    else
     /scripts/restorepkg /home/temp/cpmove-$user.tar.gz ; 
    fi
-   mv /home/temp/cpmove-$user.tar.gz /home/" 
+   mv /home/temp/cpmove-$user.tar.gz /home/" |logit 
   else
    #restore everything to main ip
    ssh $ip -p$port "mkdir -p /home/temp; 
    mv /home/cpmove-$user.tar.gz /home/temp/;
    /scripts/restorepkg /home/temp/cpmove-$user.tar.gz ; 
-   mv /home/temp/cpmove-$user.tar.gz /home/" 
+   mv /home/temp/cpmove-$user.tar.gz /home/" |logit
   fi
  fi
  
@@ -1061,7 +1105,7 @@ if [ "$user" == "$ruser" ]; then
 #check for non-empty vars
  if [ $userhomelocal ]; then
   if [ $userhomeremote ]; then
-   echo "Syncing Home directory for $user. $userhomelocal to ${ip}:${userhomeremote}" |tee -a $scriptlog
+   echo "Syncing Home directory for $user. $userhomelocal to ${ip}:${userhomeremote}" |logit
    echo "Verbose rsync output logging to $scriptlog"
    echo "Please wait..."
    #add update flag for final rsync to add --update flag for rsync, doesn't over write files updated on the new server.
@@ -1112,8 +1156,8 @@ if [ -s /tmp/remotefail.txt ]; then
 fi
 
 if [ -s $dnr ]; then 
- echo '--did not restore--' |tee -a $scriptlog
- cat $dnr | tee -a $scriptlog
+ echo '--did not restore--' |logit
+ cat $dnr | logit
  echo '-------------------'
  echo 'You can re-run this script and run the basic sync to restore these users if desired.'
  echo 'Press enter to continue...'
@@ -1125,13 +1169,13 @@ php3rdpartyapps() {
 #apps that add a php module should be installed after EA is ran at the end
 #ffmpeg
 if [ $ffmpeg ] ; then
- echo "Ffmpeg found, installing on new server..."
+ echo "Ffmpeg found, installing on new server..." |logit
  ssh $ip -p$port "/scripts/lwbake ffmpeg-php "
 fi
 
 #imagick
 if [ $imagick ] ; then
- echo "Imagemagick found, installing on new server..."
+ echo "Imagemagick found, installing on new server..." |logit
  ssh $ip -p$port "
  /scripts/lwbake imagemagick
  /scripts/lwbake imagick
@@ -1140,7 +1184,7 @@ fi
  
 #memcache
 if [ "$memcache" ]; then
- echo "Memcache found, installing remotely..."
+ echo "Memcache found, installing remotely..." |logit
  echo
  ssh $ip -p$port '
  wget -O /scripts/confmemcached.pl http://layer3.liquidweb.com/scripts/confMemcached/confmemcached.pl
@@ -1156,31 +1200,33 @@ finalchecks() {
 finalfixes
 
 echo
-echo "===Final Checks==="
+echo "===Final Checks===" |logit
 
 #3rdparty stuff
 if [ "${xcachefound}${eaccelfound}${nginxfound}" ]; then
-echo '3rd party stuff found on the old server!'
-[ "$xcachefound" ] && echo "Xcache: $xcachefound"
-[ "$eaccelfound" ] && echo "Eaccelerator: $eaccelfound"
-[ "$nginxfound" ] && echo "Nginx: $nginxfound"
+echo '3rd party stuff found on the old server!' |logit 
+[ "$xcachefound" ] && echo "Xcache: $xcachefound" |logit
+[ "$eaccelfound" ] && echo "Eaccelerator: $eaccelfound" |logit
+[ "$nginxfound" ] && echo "Nginx: $nginxfound" |logit
 echo 'Press enter to continue...'
 read
 fi
 
 #phpapicheck
 if [ $phpapicheck ]; then
- echo 'The php api check failed, make sure it matches up on the new server!'
+ echo 'The php api check failed, make sure it matches up on the new server!' |logit
 fi
 
 #phpmemcheck
 if [ $phpmemcheck ]; then
- echo 'Double check the php memory limit on old and new server!'
+ echo 'Double check the php memory limit on old and new server!' |logit
 fi
 
 #if ea was skipped, show reminder
 if [ "${skippedea}${mysqlupcheck}" ]; then
- echo 'Run EasyApache on new server! (press enter to continue)'
+  logvars skippedea
+  logvars mysqlupcheck
+ echo 'Run EasyApache on new server! (press enter to continue)' |logit
  read
  #fix php handlers if EA was skipped, could fail if php4 was mising before.
  phpapicheck
@@ -1189,22 +1235,22 @@ fi
 php3rdpartyapps
 
 if [ -s /etc/remotedomains ]; then
- echo 'Domains found in /etc/remotedomains, double check their mx settings!'
+ echo 'Domains found in /etc/remotedomains, double check their mx settings!' |logit
  cat /etc/remotedomains
- echo 'Press enter to continue...'
+ echo 'Press enter to continue...' 
  read
 fi
 
 
 if [ $localcluster ];then
- echo 'Local DNS clustering was found! May need to setup on the new server.'
+ echo 'Local DNS clustering was found! May need to setup on the new server.' |logit
  echo 'Press enter to continue...'
  read
 fi
 
 #if keep old ips was set, stop ipaliases on the new server, to prevent it from 'stealing' the ips if the old server goes offline.
 if [ $keepoldips ]; then
- echo "Stopping Ip aliases on new server to prevent Ip stealing on new server."
+ echo "Stopping Ip aliases on new server to prevent Ip stealing on new server." |logit
  ssh -p$port $ip "/etc/init.d/ipaliases stop"
 fi
  
@@ -1212,18 +1258,18 @@ fi
 #check for alternate exim ports
 eximports=`grep ^daemon_smtp_ports /etc/exim.conf`
 eximportsremote=`ssh $ip -p$port 'grep daemon_smtp_ports /etc/exim.conf'`
+logvars eximports
+logvars eximportsremote
 if [ "$eximports" != "$eximportsremote" ]; then
- echo 'Alternate smtp ports found!'
+ echo 'Alternate smtp ports found!' |logit
  echo $eximports
- echo 'Set them up within WHM on the new server. (enter to continue)'
+ echo 'Set them up within WHM on the new server. (enter to continue)' |logit
  read
  else
- echo 'Exim ports match!'
+ echo 'Exim ports match!' |logit
 fi
 
-echo "===End Final Checks==="
-echo "Enter to continue"
-read
+echo "===End Final Checks===" |logit
 }
 
 mysqldumpinitialsync() {
@@ -1235,7 +1281,7 @@ test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%R`.bak}
 #dump backups on current server and copy them over.
 mkdir -p /home/dbdumps
 if [ -s /root/dblist.txt ]; then
- echo "Found extra databases to dump..."
+ echo "Found extra databases to dump..." |logit
  for db in `cat /root/dblist.txt`; do 
   mysqldumpfunction
   ssh $ip -p$port "mysqladmin create $db"
@@ -1243,12 +1289,12 @@ if [ -s /root/dblist.txt ]; then
  rsync --progress -avHlze "ssh -p$port" /home/dbdumps $ip:/home/
 # ssh $ip -p$port "wget migration.sysres.liquidweb.com/dbsync.sh -O /scripts/dbsync.sh; screen -S dbsync -d -m bash /scripts/dbsync.sh" &
 dbsyncscript
- echo "Databases restoring in screen dbsync on remote server."
+ echo "Databases restoring in screen dbsync on remote server." 
  echo "Mysql user permissions will need to be restored to the new server."
  echo "Enter to continue."
  read
 else
- echo "Did not find /root/dblist.txt"
+ echo "Did not find /root/dblist.txt" | logit
 fi
 
 }
@@ -1282,7 +1328,7 @@ ssh $ip -p$port "screen -S dbsync -d -m bash /scripts/dbsync.sh" &
 }
 
 mysqldbfinalsync() {
-echo "Dumping the databases..."
+echo "Dumping the databases..." |logit
 test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%T`.bak}
 mkdir -p /home/dbdumps
 ssh $ip -p$port 'test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%T`.bak}'
@@ -1321,18 +1367,18 @@ fi
 
 finalsync() {
 echo
-echo "Running final sync..." |tee -a $scriptlog
+echo "Running final sync..." |logit
 finalsynccheck=1
 #check for previous migration
 if [ -s /root/userlist.txt ]; then 
- echo "Found /root/userlist.txt." |tee -a $scriptlog
+ echo "Found /root/userlist.txt." |logit
  userlist=`cat /root/userlist.txt`
- echo "$userlist" | tee -a $scriptlog
+ echo "$userlist" | logit
  if yesNo "Are these users correct?"; then
-  echo "Continuing." |tee -a $scriptlog
+  echo "Continuing." |logit
  else
   if yesNo "Would you like to migrate all users?"; then
-   echo "Syncing all users." |tee -a $scriptlog
+   echo "Syncing all users." |logit
    userlist=`/bin/ls -A /var/cpanel/users`
   else
    echo "Please edit /root/userlist.txt with the users you wish to migrate and rerun the script."
@@ -1340,9 +1386,9 @@ if [ -s /root/userlist.txt ]; then
   fi
  fi 
 else
- echo "Syncing all users." |tee -a $scriptlog
+ echo "Syncing all users." |logit
  userlist=`/bin/ls -A /var/cpanel/users`
- echo "$userlist" |tee -a $scriptlog
+ echo "$userlist" |logit
 fi
 sleep 3
 getip
@@ -1370,14 +1416,14 @@ syncstarttime=`date +%F.%T`
 rsyncupgrade
 
 if [ $stopservices ]; then
-echo "Stopping Services..." |tee -a $scriptlog
+echo "Stopping Services..." |logit
 [ -s /etc/init.d/chkservd ] && /etc/init.d/chkservd stop
 /usr/local/cpanel/bin/tailwatchd --disable=Cpanel::TailWatch::ChkServd
 /etc/init.d/httpd stop
 /etc/init.d/exim stop
 /etc/init.d/cpanel stop
 else
- echo "Not stopping services." |tee -a $scriptlog
+ echo "Not stopping services." |logit
 fi
 
 mysqldbfinalsync
@@ -1403,7 +1449,7 @@ if [ $copydns ]; then
  #for the one time i encountered NSD
  nsdcheck=`ps aux |grep nsd |grep -v grep`
  if [ "$nsdcheck" ]; then
-  echo "Nsd found, reloading" |tee -a $scriptlog
+  echo "Nsd found, reloading" |logit
   nsdc rebuild
   nsdc reload
  fi
@@ -1412,7 +1458,7 @@ fi
 
 #restart services
 if [ $restartservices ]; then
- echo "Restarting services..." |tee -a $scriptlog
+ echo "Restarting services..." |logit
  [ -s /etc/init.d/chkservd ] && /etc/init.d/chkservd start
  /etc/init.d/httpd start
  /etc/init.d/mysql start
@@ -1420,7 +1466,7 @@ if [ $restartservices ]; then
  /etc/init.d/cpanel start
  /usr/local/cpanel/bin/tailwatchd --enable=Cpanel::TailWatch::ChkServd
 else
- echo "Skipping restart of services..."| tee -a $scriptlog
+ echo "Skipping restart of services..."| logit
 fi
 
 
@@ -1432,9 +1478,9 @@ echo
 #display mysqldump errors
 if [ -s /tmp/mysqldump.log ]; then
  echo 
- echo 'Errors detected during mysqldumps:' |tee -a $scriptlog
- cat /tmp/mysqldump.log |tee -a $scriptlog
- echo "End of errors from /tmp/mysqldump.log." |tee -a $scriptlog
+ echo 'Errors detected during mysqldumps:' |logit
+ cat /tmp/mysqldump.log |logit
+ echo "End of errors from /tmp/mysqldump.log." |logit
  sleep 1
 fi
 
@@ -1476,14 +1522,14 @@ logvars RSYNCVERSION
 rsyncmajor=`echo $RSYNCVERSION |cut -d. -f1`
 logvars rsyncmajor
 if [ "$rsyncmajor" -lt 3 ]; then
- echo "Updating rsync..." |tee -a $scriptlog
+ echo "Updating rsync..." | logit
  LOCALCENT=`cat /etc/redhat-release |awk '{print $3}'|cut -d '.' -f1`
  logvars LOCALCENT
  LOCALARCH=`uname -i`
  logvars LOCALARCH
  rpm -Uvh http://migration.sysres.liquidweb.com//rsync/rsync-3.0.0-1.el$LOCALCENT.rf.$LOCALARCH.rpm
 else
- echo "Rsync up to date." |tee -a $scriptlog
+ echo "Rsync up to date." |logit
 fi
 
 #REMOTECENT=`ssh -p$PORT $USER@$IP "cat /etc/redhat-release" |awk '{print $3}'|cut -d '.' -f1`
@@ -1493,16 +1539,17 @@ fi
 
 rubygems() {
 echo 
-echo "Copying ruby gems over to new server." | tee -a $scriptlog
+echo "Copying ruby gems over to new server." | logit
 gem list | tail -n+4 | awk '{print $1}' > /root/gemlist.txt
+echo "gemlist:" | logit
+cat /root/gemlist.txt | logit
 rsync -avHPe "ssh -p$port" /root/gemlist.txt $ip:/root/
-ssh -p$port $ip " cat /root/gemlist.txt | xargs gem install "
-
+ssh -p$port $ip " cat /root/gemlist.txt | xargs gem install " | logit
 }
 
 cpbackupcheck() {
 echo "
-Checking if cpanel backups are enabled on new server." |tee -a $scriptlog
+Checking if cpanel backups are enabled on new server." |logit
 backupacctssetting=`ssh -p$port $ip "grep ^BACKUPACCTS /etc/cpbackup.conf" | awk '{print $2}' `
 logvars backupacctssetting
 backupenablesetting=`ssh -p$port $ip "grep ^BACKUPENABLE /etc/cpbackup.conf" | awk '{print $2}' `
@@ -1511,7 +1558,7 @@ if [ $backupacctssetting = "yes" ]; then
   #backupaccts is true, check for backupenable also
   if [ $backupenablesetting = "yes" ]; then
     #backupenable is also true
-    echo "Backups are enabled" |tee -a $scriptlog
+    echo "Backups are enabled" |logit
   else
     cpbackupenable
   fi
@@ -1521,7 +1568,7 @@ fi
 }
 
 cpbackupenable(){
-echo "Cpanel backups are disabled on $ip" | tee -a $scriptlog
+echo "Cpanel backups are disabled on $ip" | logit
 if yesNo "Do you want to enable backups on the remote server?"; then
     ssh -p$port $ip "sed -i.syncbak -e 's/^\(BACKUPACCTS\).*/\1 yes/g' -e 's/^\(BACKUPENABLE\).*/\1 yes/g' /etc/cpbackup.conf"
 fi
@@ -1529,7 +1576,10 @@ fi
 }
 
 logvars() {
+  # make it easy to log a variable 
+  #logvars variablename
 echo "$1"="${!1}" >> $scriptlog
 }
+
 
 main
