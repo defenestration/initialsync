@@ -93,6 +93,7 @@ scriptlogdir="/home/temp"
 scriptlog="${scriptlogdir}/initialsync.${starttime}.log"
 dnr=/home/didnotrestore.txt
 rsyncflags="-avHl"
+mysqldumplog="/tmp/mysqldump.log"
 [ -s $dnr ] && dnrusers=`cat $dnr`
 #for home2 
 > /tmp/remotefail.txt
@@ -1336,12 +1337,12 @@ dbsyncscript
 
 mysqldumpfunction() {
 #should be run inside a loop, where db is your database name
-echo "Dumping $db" | tee -a /tmp/mysqldump.log; 
+echo "Dumping $db" | tee -a $mysqldumplog; 
 #mysqldump log-error doesn't work for versions less than 5.0.42 
 if [[ $mysqldumpver < 5.0.42 ]]; then 
  mysqldump --add-drop-table $db > /home/dbdumps/$db.sql
 else
- mysqldump --force --add-drop-table --log-error=/tmp/mysqldump.log $db > /home/dbdumps/$db.sql  
+ mysqldump --force --add-drop-table --log-error=${mysqldumplog} $db > /home/dbdumps/$db.sql  
 fi
 }
 
@@ -1396,20 +1397,25 @@ syncstarttime=`date +%F.%T`
 rsyncupgrade
 
 if [ $stopservices ]; then
-echo "Stopping Services..." 
-[ -s /etc/init.d/chkservd ] && /etc/init.d/chkservd stop
-/usr/local/cpanel/bin/tailwatchd --disable=Cpanel::TailWatch::ChkServd
-/etc/init.d/httpd stop
-/etc/init.d/exim stop
-/etc/init.d/cpanel stop
+  echo "Stopping Services..." 
+  [ -s /etc/init.d/chkservd ] && /etc/init.d/chkservd stop
+  /usr/local/cpanel/bin/tailwatchd --disable=Cpanel::TailWatch::ChkServd
+  /etc/init.d/httpd stop
+  /etc/init.d/exim stop
+  /etc/init.d/cpanel stop
 else
  echo "Not stopping services." 
 fi
 
 mysqldbfinalsync
 
+acct_num=1
+total_accts=`echo $userlist | tr ' ' '\n' |wc -l`
 for user in $userlist; do 
- rsynchomedirs
+  acct_progress="( $acct_num / $total_accts )"
+  logvars acct_num total_accts user acct_progress
+  rsynchomedirs
+  acct_num=$(( $acct_num+1 ))
 done
 
 #packages, spool data
@@ -1470,7 +1476,8 @@ if [ $stopservices ]; then
  if [ $restartservices ];then echo "Restarted services"; else echo "Didnt restart services"; fi
 fi
 [ $copydns ] && echo "DNS was copied over from new server."
-
+echo "============"
+echo
 if yesNo "Remove SSH key from new server?"; then
   ssh -p${port} root@$ip "
   mv ~/.ssh/authorized_keys{,.initialsync.`date +%F`}; 
