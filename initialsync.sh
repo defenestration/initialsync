@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Nov 05 2012"
+ver="Nov 06 2012"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -83,7 +83,7 @@ ver="Nov 05 2012"
 # Oct  5 - more logging to sshkeygen
 # Oct 22 - added option to remove ssh key at the end of final sync. 
 # Nov  1 - added logit function, claned up some yesNo questions
-# Nov  5 - logging during cpanel account restore. matchpear function by jacob, improved logvars, improved restorepkg logic
+# Nov  5 - logging during cpanel account restore. matchpear function by jacob, improved logvars, improved restorepkg logic, numbering restored accounts
 
 
 #######################
@@ -773,14 +773,7 @@ postgres=`ps aux |grep -e 'postgres' |grep -v grep |tail -n1`
 xcachefound=`ps aux | grep -e 'xcache' | grep -v grep | tail -n1`
 eaccelfound=`ps aux | grep -e 'eaccelerator' | grep -v grep |tail -n1`
 nginxfound=`ps aux | grep  -e 'nginx' |grep -v grep| tail -n1`
-logvars ffmpeg
-logvars imagick
-logvars memcache
-logvars java
-logvars postgres
-logvars xcachefound
-logvars eaccelfound
-logvars nginxfound
+logvars ffmpeg imagick memcache java postgres xcachefound eaccelfound nginxfound
 }
 
 mysqlcheck() {
@@ -1019,21 +1012,27 @@ echo "Packaging cpanel accounts and restoring on remote server..."
 syncstarttime=`date +%F.%T`
 #backup userlist variable
 echo $userlist > /root/userlist.txt
+#setup a counter to track account progress
+acct_num=1
+total_accts=`echo $userlist | tr ' ' '\n' |wc -l`
+
 #backup userlist of users that didn't restore, if it exists
 if [ -f "$dnr" ]; then
   cp -rpf ${dnr}{,.bak.$starttime}
 fi
 > $dnr
 mainip=`grep ADDR /etc/wwwacct.conf | awk '{print $2}'`
-logvars mainip syncstarttime userlist
+logvars acct_num total_accts mainip syncstarttime userlist
 for user in $userlist; do  
+  #account progress
+  acct_progress="( $acct_num / $total_accts )"
   userip=`grep ^IP= /var/cpanel/users/$user|cut -d '=' -f2`
   logvars user userip
-  echo "Packaging $user, logging to $scriptlog"  
+  echo "${acct_progress} Packaging $user. "  
   /scripts/pkgacct --skiphomedir $user >> $scriptlog
-  echo "Rsyncing cpmove-$user.tar.gz to $ip:/home/" 
+  echo "${acct_progress} Rsyncing cpmove-$user.tar.gz to $ip:/home/" 
   rsync -aqHlPe "ssh -p$port" /home*/cpmove-$user.tar.gz $ip:/home 
-  echo "Restoring account $user" 
+  echo "${acct_progress} Restoring account $user" 
   #ipcheck returns one if Restore To Dedicated Ips is seletcted by the user
   #If the user ip doesn't equal the main server ip, then it is is on a dedicated ip
   if [[ $userip != $mainip && $ipcheck = 1 ]] ; then
@@ -1060,6 +1059,7 @@ for user in $userlist; do
   mv /home/temp/cpmove-$user.tar.gz /home/" 
   #make sure user restored, rsync homedir
   rsynchomedirs
+  acct_num=$(( $acct_num+1 ))
 done  
 syncendtime=`date +%F.%T`
 }
@@ -1072,42 +1072,40 @@ userhomelocal=`grep  ^$user: /etc/passwd |cut -d: -f6 `
 userhomeremote=`ssh $ip -p$port " grep  ^$user: /etc/passwd |cut -d: -f6"` 
 #rsync
 echo
+#check if cpanel user exists on remote server
 ruser=`ssh $ip -p$port "cd /var/cpanel/users/; ls $user"`
 logvars userhomeremote userhomelocal ruser
 if [ "$user" == "$ruser" ]; then 
-#check for non-empty vars
- if [ $userhomelocal ]; then
-  if [ $userhomeremote ]; then
-   echo "Syncing Home directory for $user. $userhomelocal to ${ip}:${userhomeremote}" 
-   echo "Verbose rsync output logging to $scriptlog"
-   echo "Please wait..."
-   #add update flag for final rsync to add --update flag for rsync, doesn't over write files updated on the new server.
-   if [ $rsyncupdate ]; then
-    rsyncflags="-avHl --update" 
-   else 
-   #use for initial sync or overwriting files updated on the newer server.
-    rsyncflags="-avHl"
-   fi
-   rsync $rsyncflags -e  "ssh -p$port" ${userhomelocal}/ ${ip}:${userhomeremote}/ >> $scriptlog 
+  #check for non-empty vars
+  if [ $userhomelocal ]; then
+    if [ $userhomeremote ]; then
+     echo "${acct_progress} Syncing Home directory for $user. $userhomelocal to ${ip}:${userhomeremote}" 
+     echo "Please wait..."
+     #add update flag for final rsync to add --update flag for rsync, doesn't over write files updated on the new server.
+      if [ $rsyncupdate ]; then
+        rsyncflags="-avHl --update" 
+      else 
+        #use for initial sync or overwriting files updated on the newer server.
+        rsyncflags="-avHl"
+      fi
+    rsync $rsyncflags -e  "ssh -p$port" ${userhomelocal}/ ${ip}:${userhomeremote}/ >> $scriptlog 
+    else
+     #remote fails
+     echo "Remote path for $user not found."
+     echo "$user remote path not found: \"$userhomeremote\"" >> /tmp/remotefail.txt
+     echo $user >> $dnr 
+    fi
   else
-   #remote fails
-   echo "Remote path for $user not found."
-   echo "$user remote path not found: \"$userhomeremote\"" >> /tmp/remotefail.txt
-   echo $user >> $dnr 
+    #local fails
+    echo "Local path for $user not found."
+    echo "$user local path not found: \"$userhomelocal\"" >> /tmp/localfail.txt
+    echo $user >> $dnr
   fi
- else
-  #local fails
-  echo "Local path for $user not found."
-  echo "$user local path not found: \"$userhomelocal\"" >> /tmp/localfail.txt
-  echo $user >> $dnr
- fi
- 
 else 
  #didn't find user on remote 
  echo $user >> $dnr
 fi
-echo 
- 
+echo  
 }
 
 didntrestore() {
@@ -1198,10 +1196,21 @@ fi
 #if ea was skipped, show reminder
 if [ "${skippedea}${mysqlupcheck}" ]; then
   logvars mysqlupcheck skippedea
- echo 'Run EasyApache on new server! (press enter to continue)' 
- read
- #fix php handlers if EA was skipped, could fail if php4 was mising before.
- phpapicheck
+  echo "Php versions:"
+  echo "Source: $phpv"
+  echo "Dest: $phpvr"
+
+  echo "Mysql versions:"
+  echo "Source: $smysqlv" 
+  echo "Dest: $dmysqlv" 
+  if yesNo 'We detected that Easyapache should be ran on the new server. Was it ran?' ;then
+    echo "Ok, moving on."
+  else
+    echo "You can run it now on the new server. Please enter y to continue regardless."
+    sleep 2
+  fi
+  #fix php handlers if EA was skipped, could fail if php4 was mising before.
+  phpapicheck
 fi
 
 php3rdpartyapps
