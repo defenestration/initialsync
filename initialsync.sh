@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Nov 06 2012"
+ver="Nov 26 2012"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -84,14 +84,17 @@ ver="Nov 06 2012"
 # Oct 22 - added option to remove ssh key at the end of final sync. 
 # Nov  1 - added logit function, claned up some yesNo questions
 # Nov  5 - logging during cpanel account restore. matchpear function by jacob, improved logvars, improved restorepkg logic, numbering restored accounts
-
+# Nov  7 - Minor update to 'was EA ran' query, detecition that cpmove file was created on source before coyping. Didnotrestore.txt changed to /root directory.
+# Nov 20 - add allcpusers variable to filter out 'root' and 'system' from cpanel users. Initial Color support.
+# Nov 21 - e2c function, colorizing. removed some keepoldips code.
 
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
 scriptlogdir="/home/temp"
 scriptlog="${scriptlogdir}/initialsync.${starttime}.log"
-dnr=/home/didnotrestore.txt
+dnr=/root/didnotrestore.txt
+userlistfile=/root/userlist.txt
 rsyncflags="-avHl"
 mysqldumplog="/tmp/mysqldump.log"
 [ -s $dnr ] && dnrusers=`cat $dnr`
@@ -101,6 +104,43 @@ mysqldumplog="/tmp/mysqldump.log"
 > /tmp/migration.rsync.log
 mkdir -p $scriptlogdir
 touch $scriptlog
+allcpusers=`/bin/ls -A /var/cpanel/users | grep -v ^root$ | grep -v ^system$`
+
+#colors
+nocolor="\E[0m"
+black="\033[0;30m"
+grey="\033[1;30m"
+red="\033[0;31m"
+lightRed="\033[1;31m"
+green="\033[0;32m"
+lightGreen="\033[1;32m"
+brown="\033[0;33m"
+yellow="\033[1;33m"
+blue="\033[0;34m"
+lightBlue="\033[1;34m"
+purple="\033[0;35m"
+lightPurple="\033[1;35m"
+cyan="\033[0;36m"
+lightCyan="\033[1;36m"
+white="\033[1;37m" #a bold white
+#background colors: \033[bold;color;background
+greyBg="\033[1;37;40m"
+
+
+#echo in a color function
+ec() {
+#Usage: ec color "text"
+ecolor=${!1} #get the color
+shift #$1 is removed here
+#echo the rest
+echo -e ${ecolor}"${*}"${nocolor}
+}
+
+e2c() {
+  #press enter to continue
+  ec lightCyan "Press Enter to continue..."
+  read
+}
 
 logit() {
 tee -a $scriptlog
@@ -111,8 +151,8 @@ echo "Started $starttime"
 yesNo() { #generic yesNo function
 #repeat if yes or no option not valid
 while true; do
-#$* read ever parameter giving to the yesNo function which will be the message
- echo -n "$* (Y/N)? " 
+#$* read every parameter given to the yesNo function which will be the message
+ echo -ne "${yellow}${*}${white} (Y/N)?${nocolor} " 
  #junk holds the extra parameters yn holds the first parameters
  read yn junk
  case $yn in
@@ -123,7 +163,7 @@ while true; do
     echo "n" >> $scriptlog
     return 1  ;;
   *) 
-    echo "Please enter y or n." 
+    ec lightRed "Please enter y or n." 
  esac
 done    
 #usage:
@@ -136,14 +176,14 @@ done
 
 menutext() {
 echo "Version: $ver"
-echo "Main Menu:
-Select the migration type:
-1) Full sync (from /root/userlist.txt or all users, version matching)
+ec greyBg "=Initialsync Main Menu=
+Select the migration type:"
+echo "1) Full sync (from $userlistfile or all users, version matching)
 2) Basic sync (all users, no version matching) 
 3) Single user sync (no version matching, shared server safe)
-4) User list sync (from /root/userlist.txt, no version matching)
+4) User list sync (from $userlistfile, no version matching)
 8) Database sync - only sync databases for cpanel users, and from /root/dblist.txt.
-9) Final sync (from /root/userlist.txt or all users)
+9) Final sync (from $userlistfile or all users)
 0) Quit"
 }
 
@@ -168,9 +208,6 @@ while [ $mainloop == 0 ] ; do
  4)
   listsync
   mainloop=1   ;;
-# 5)
-#  keepipsync
-#  mainloop=1 ;;
  8) 
   dbsync
   mainloop=1 ;;
@@ -180,7 +217,7 @@ while [ $mainloop == 0 ] ; do
  0) 
   echo "Bye..."; exit 0 ;;
  *)  
-   echo "Not a valid choice. Also, the game."; sleep 2 ; clear 
+   ec lightRed "Not a valid choice. Also, the game."; sleep 2 ; clear 
  esac
 done
 sleep 3
@@ -189,14 +226,14 @@ echo "Started at $starttime"
 [ $syncstarttime ] && echo "Sync started at $syncstarttime" 
 [ $syncendtime ] &&  echo "Sync finished at $syncendtime" 
 echo "Finished at `date +%F.%T`" 
-echo 'Done!'  
+ec lightGreen 'Done!'  
 exit 0
 }
 
 dbsync() {
 dbonlysync=1
 echo "Database only sync." 
-userlist=`/bin/ls -A /var/cpanel/users`
+userlist=$allcpusers
 getip        #asks for ip or checks a file to confirm destination
 mysqldbfinalsync
 }
@@ -223,8 +260,12 @@ while [ $singleuserloop == 0 ]; do
     acctcopy
     didntrestore
     echo
-    echo "Removing ssh key from remote server." 
-    ssh -p$port $ip "rm ~/.ssh/authorized_keys ; cp -rp ~/.ssh/authorized_keys{.syncbak,}"
+    if yesNo "Remove ssh key from remote server?" ; then
+      echo "Removing key..."
+      ssh -p$port $ip "rm ~/.ssh/authorized_keys ; cp -rp ~/.ssh/authorized_keys{.syncbak,}"
+    else
+      echo "Leaving key."
+    fi
   else
     echo "Could not find $userlist." 
   fi
@@ -236,10 +277,10 @@ echo
 echo "List sync." 
 listsyncvar=1
 #search for /root/users.txt and /home/users.txt
-if [ -s /root/userlist.txt ]; then
- echo "Found /root/userlist.txt" 
+if [ -s $userlistfile ]; then
+ echo "Found $userlistfile" 
  sleep 3
- userlist=`cat /root/userlist.txt`
+ userlist=`cat $userlistfile`
  echo "$userlist" 
  basicsync
 elif [ -s /home/users.txt ]; then 
@@ -274,13 +315,6 @@ echo "Full sync started"
 presync
 versionmatching
 copyaccounts
-}
-
-keepipsync() {
-echo
-echo "Sync keeping old dedicated ips." 
-keepoldips=1
-fullsync
 }
 
 #Main sync procecures
@@ -332,43 +366,46 @@ hostsgen
 dnrcheck() { 
 #define users
 #check and suggest to restore accounts from a previous failed migration
-#dnrusers is defined at the start
 echo
-echo "Checking for previous failed migration."  
+echo "Checking for failed migrations..."  
 if [ "$dnrusers" ];then
  echo
- echo "Found users from failed migration in $dnr" 
+ ec lightRed "Found users from failed migration in $dnr" 
  echo $dnrusers
- ls -l $dnr
  echo
  if yesNo 'Want to restore these failed users only?' ;then
-  userlist=$dnrusers
-  cp -rpf ${dnr}{,.bak.$starttime}
-  > $dnr
+   userlist=$dnrusers
+   mv ${dnr} ${dnr}.${starttime}.bak
+   > $dnr
  else 
-  echo "Okay, selecting all users for migration." 
-  userlist=`/bin/ls -A /var/cpanel/users`	
+    echo "Okay, selecting all users for migration." 
+    userlist=$allcpusers
+    mv ${dnr} ${dnr}.${starttime}.bak
+   > $dnr
  fi
- else
+else
+  echo "No failed migrations found. Checking for previous migrations..."
   #check for userlist file
-  if [ -s /root/userlist.txt ]; then
-   echo "/root/userlist.txt found: " 
-   cat /root/userlist.txt 
-   if yesNo "Do you want to use this list from /root/userlist.txt?" ; then
-    userlist=`cat /root/userlist.txt`
-   else
-    echo "Selecting all users." 
-    userlist=`/bin/ls -A /var/cpanel/users`
-   fi
+  if [ -s $userlistfile ]; then
+   echo "$userlistfile found: " 
+   cat $userlistfile 
+    if yesNo "Do you want to use this list from $userlistfile?" ; then
+      userlist=`cat $userlistfile`
+    else
+      echo "Backing up $userlistfile to ${userlistfile}.${starttime}.bak."
+      mv $userlistfile ${userlistfile}.${starttime}.bak
+      echo "Selecting all users." 
+      userlist=$allcpusers
+    fi
   else 
    echo "No previous migration found, migrating all users."
-   userlist=`/bin/ls -A /var/cpanel/users`
+   userlist=$allcpusers
   fi
 fi
 
-echo "Users slated for migration:" 
+ec yellow "Users selected for migration:" 
 echo $userlist 
-sleep 2
+sleep 3
 }
 
 hostsgen() {
@@ -440,15 +477,14 @@ echo "Checking for SSL Certificates in apache conf."
 crtcheck=`grep SSLCertificateFile /usr/local/apache/conf/httpd.conf`
 logvars crtcheck
 if [ "$crtcheck" ]; then
- echo "SSL Certificates detected." 
+ ec yellow "SSL Certificates detected." 
  echo
  for crt in `grep SSLCertificateFile /usr/local/apache/conf/httpd.conf |awk '{print $2}'`; do
   echo $crt; openssl x509 -noout -in $crt -issuer  -subject  -dates 
   echo 
  done
  echo
- echo "Enter to continue..."
- read
+ e2c
 else
  echo "No SSL Certificates found in httpd.conf." 
  sleep 2 
@@ -469,8 +505,7 @@ else
  for each in $domainlist; do echo $each\ `dig @8.8.8.8 NS +short $each |sed 's/\.$//g'`\ `dig @8.8.8.8 +short $each` ;done | grep -v \ \ | column -t > /root/dns.txt
  cat /root/dns.txt | sort -n +3 -2 | more
 fi
-echo "Enter to continue..."
-read
+e2c
 }
 
 lowerttls() {
@@ -503,13 +538,8 @@ ipfile=/root/dest.ip.txt
 if [ -f $ipfile ]; then
  ip=`cat $ipfile`
  echo
- echo "Ip from previous migration found `echo $ip`"   
+ ec yellow "Ip from previous migration found: `echo $ip`"   
  getport
- #echo "Testing connetion to remote server..."
- #echo
- #ssh $ip -p$port "cat /etc/hosts |tail -n3 ; ifconfig eth0 |head -n2"
- #echo
- #echo "Test complete."
  echo
  if yesNo "Is $ip the server you want?  Otherwise enter No to input new ip." ;then
   echo "Ok, continuing with $ip" 
@@ -539,7 +569,7 @@ echo
 echo "Getting ssh port." 
 if [ -s /root/dest.port.txt ]; then
  port=`cat /root/dest.port.txt`
- echo "Previous Ssh port found ($port)."
+ ec yellow "Previous Ssh port found: ($port)."
 else 
  echo -n "SSH Port [22]: "
  read port
@@ -549,7 +579,6 @@ if [ -z $port ]; then
  port=22
 fi
 echo $port > /root/dest.port.txt
-sleep 1
 logvars port
 
 }
@@ -564,7 +593,16 @@ else
 fi
 echo "Copying Key to remote server..." 
 cat ~/.ssh/id_rsa.pub | ssh $ip -p$port "cp -rp ~/.ssh/authorized_keys{,.syncbak} ; mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
-ssh $ip -p$port "echo \'Connected!\';  cat /etc/hosts| grep $ip " 
+sshtest=$?
+#test exit value of ssh command.
+if [[ "$sshtest" > 0 ]]; then 
+  ec lightRed "Ssh connection to $ip failed, please check connection before retrying!"
+  exit 3
+else
+  ec lightGreen "Ssh connection to $ip succeded!"
+fi
+
+#ssh $ip -p$port "echo \'Connected!\';  cat /etc/hosts| grep $ip " 
 }
  
 
@@ -587,13 +625,6 @@ fi
 
 dedipcheck() { #check for same amount of dedicated ips
 
-if [ $keepoldips ];then 
- echo "Keeping old ips, copying ips file over."
- ssh $ip -p$port "cp -rp /etc/ips{,.bak}"
- rsync -aqHe "ssh -p${port}" /etc/ips $ip:/etc/
- ssh $ip -p$port "/etc/init.d/ipaliases restart"
-fi
-
 echo
 echo "Checking for dedicated Ips." 
 # If /etc/userdatadomains exists, calculate dedicated IPs based on usage.
@@ -614,35 +645,31 @@ fi
 # Check target server for number of dedicated IPs available
 destipcount=`ssh  $ip -p$port "cat /etc/ips |grep ^[0-9] | wc -l"`
 logvars destipcount preliminary_ip_check server_main_ip sourceipcount
+echo "==Dedicated Ip Count==
+Source (Ips in use): $sourceipcount
+Destination        : $destipcount"
 if (( $sourceipcount <= $destipcount ));then
-  echo "Source server has less or equal ips compared to destination." 
-  if yesNo "Override IP check?
-    yes = Restore accounts to dedicated IPs (accouts will not all restore if there are not enough ips)
-    no  = Restore all to the main Shared ip" ;then
-    ipcheck=1
-  else
-    ipcheck=0
-  fi
+  ec lightGreen "There seems to be enough IPs on the destination server for this migration."
+  ipcheckquery
 else
-  ipcheck=0
-  sleep 2
-  /scripts/ipusage
-  echo 
-  echo "Not enough dedicated IPs found on destination server ($destipcount) when compared to source server ($sourceipcount)." 
-  # echo "If you are sure the server isn't using all its IPs for accounts you can override the Ip check by answering Yes. Otherwise answer No to put all sites on the main shared IP."
-  if yesNo "Override IP check?
-    yes = Try to restore accounts to dedicated IPs anyway (accouts will not all restore if there are not enough ips)
-    no  = Restore all to the main Shared ip" ;then
-    ipcheck=1
-    echo "Restoring to dedicated ips." 
-  else
-    ipcheck=0
-    echo "Restoring to main shared ip." 
-  fi
+  ec lightRed "The Destination server does not seem to have enough dedicated IPs." 
+  ipcheckquery
 fi
 sleep 1
-logvars ipcheck
+}
 
+ipcheckquery(){
+ipcheck=0
+if yesNo "Override IP check?
+ yes = Restore accounts to dedicated Ips. (Please ensure there are enough Dedicated IPs)
+ no  = Restore accounts to the Main Shared Ip." ;then
+  echo "Restoring accounts to dedicated IPs."
+  ipcheck=1
+else
+  echo "Restoring accounts to the main shared Ip."
+  ipcheck=0
+fi
+logvars ipcheck
 }
 
 nameservers() {
@@ -672,10 +699,10 @@ for file in $apachefilelist; do
  if [ -s /usr/local/apache/conf/includes/$file ]; then
   #file exists and is non-zero size
   echo
-  echo "Contents of /usr/local/apache/conf/includes/$file :
+  ec lightCyan "Contents of /usr/local/apache/conf/includes/$file :
 =================================" 
   cat /usr/local/apache/conf/includes/$file 
-  echo "================================="
+  ec cyan "================================="
   if yesNo "Found extra apache configuration in $file, shown above. copy to new server?";  then
    ssh -p$port $ip "mv /usr/local/apache/conf/includes/$file{,.bak}"
    rsync -avHPe "ssh -p$port" /usr/local/apache/conf/includes/$file $ip:/usr/local/apache/conf/includes/
@@ -787,9 +814,9 @@ logvars smysqlv dmysqlv
 echo "Source: $smysqlv" 
 echo "Destination: $dmysqlv" 
 if [ $smysqlv == $dmysqlv ]; then  
- echo "Mysql versions match." 
+ ec green "Mysql versions match." 
 else 
- echo "Mysql versions do not match."  
+ ec red "Mysql versions do not match."  
  if yesNo "Change remote server's mysql version to $smysqlv?" ; then
   #get remote php version now since mysql will not allow us to check later.
   phpvr=`ssh $ip -p$port "php -v |head -n1 |cut -d\" \" -f2"`
@@ -814,7 +841,7 @@ if ! [ "$dbprefixvar" = "database_prefix=0" ]; then
 #still have user_ databases, filter those.
  cp -rp /home/temp/dblist.txt /home/temp/extradbs.txt
  #get all users here, not userlist.
- for user in `/bin/ls -A /var/cpanel/users`; do 
+ for user in $allcpusers ; do 
   sed -i -e "/^$user\_/d" /home/temp/extradbs.txt
  done
  #check for non zero filesize
@@ -830,17 +857,16 @@ if ! [ "$dbprefixvar" = "database_prefix=0" ]; then
 else
  echo
  echo "Detected user database prefixing is disabled in WHM.  Might want to set this up on the new server, accounts should migrate fine though."
- echo "Enter to continue..."
- read
+ e2c  
 fi
 }
 
 mysqlsymlinkcheck() {
 echo
-echo "Checking if Mysql was moved to a different location."
+echo "Checking if Mysql was moved to a different location..."
 #test if symbolic link
 if [ -L /var/lib/mysql ]; then
- echo "Warning, /var/lib/mysql is a symlink! Grepping for datadir in my.cnf:"
+ ec red "Warning, /var/lib/mysql is a symlink! Grepping for datadir in my.cnf:"
  grep datadir /etc/my.cnf
  echo "You may want to relocate mysql on the new server (if it isnt already) before continuing."
  if yesNo 'Yes to continue, no to exit.'; then
@@ -849,6 +875,8 @@ if [ -L /var/lib/mysql ]; then
   echo "Exiting."
   exit 0
  fi
+else
+  echo "Mysql is in the default location."
 fi
 }
 
@@ -863,7 +891,6 @@ else
   sleep 3
   ssh -p$port $ip "yum -y install gcc"
 fi
-
 }
 
 upcp() {
@@ -892,7 +919,7 @@ sleep 1
 
 upea() {
 echo
-echo "Prepping for EasyApache..."
+echo "Copying over EasyApache configs and WHM packages and features..."
 #EA 
 #copy the EA config
 rsync -aqHe "ssh -p$port" /var/cpanel/easy/apache/ $ip:/var/cpanel/easy/apache/
@@ -900,6 +927,7 @@ rsync -aqHe "ssh -p$port" /var/cpanel/easy/apache/ $ip:/var/cpanel/easy/apache/
 rsync -aqHe "ssh -p$port" /var/cpanel/packages/ $ip:/var/cpanel/packages/
 #Copy features
 rsync -aqHe "ssh -p$port" /var/cpanel/features/ $ip:/var/cpanel/features/
+
 #find php versions to judge whether or not ea should be run
 phpv=`php -v |head -n1|cut -d" " -f2`
 #check if the var is set by the mysql function
@@ -912,10 +940,10 @@ Available software versions on remote server:"
 ssh -p $port $ip "/scripts/easyapache --latest-versions"
 
 if [[ $phpv < 5.3 ]];then 
- echo "If the php version should stay 5.2, you should manually run EA."
+ ec red "If the php version does not match any of the above, you should manually run EA!"
 fi
 echo "Source: $phpv"
-echo "Dest: $phpvr"
+echo "Dest  : $phpvr"
 if yesNo "Want me to run EA on remote server?" ;then
  ea=1
  unset mysqlupcheck
@@ -938,17 +966,18 @@ ea
 postgres"
 
 echo
-echo "Heres what we found to install:"
+ec lightGreen "Heres what we found to install:"
 for prog in $proglist; do 
  if [ "${!prog}" ] ; then
   echo "${prog}"
  fi
+sleep 3
 done
-echo "Press enter to begin installing and start the initial sync."
-read
+ec lightGreen "Ready to begin installing and start the initial sync!"
+e2c
 
 #lwbake,plbake
-echo "Installing lwbake and plbake"
+ec yellow "Installing lwbake and plbake"
 ssh $ip -p$port "wget -O /scripts/lwbake http://layer3.liquidweb.com/scripts/lwbake;
 chmod 700 /scripts/lwbake
 wget -O /scripts/plbake http://layer3.liquidweb.com/scripts/plBake/plBake
@@ -956,20 +985,20 @@ chmod 700 /scripts/plbake"
 
 #java
 if [ "$java" ];then
- echo "Java found, installing..."
+ ec yellow "Java found, installing..."
  ssh $ip -p $port "/scripts/plbake java"
 fi
 
 #upcp
 if [ $upcp ]; then
- echo "Running Upcp..."
+ ec yellow "Running Upcp..."
  sleep 2
  ssh $ip -p$port "/scripts/upcp"
 fi
 
 #mysql
 if [ $mysqlup ]; then
- echo "Reinstalling mysql..."
+ ec yellow "Reinstalling mysql..."
  #mysql 5.5 won't start if safe-show-database and skip-locking are in my.cnf
  ssh $ip -p$port "
  sed -i.bak /mysql-version/d /var/cpanel/cpanel.config ; 
@@ -987,14 +1016,14 @@ fi
 
 #Easyapache
 if [ $ea ]; then
- echo "Running EA..."
+ ec yellow "Running EA..."
  ssh $ip -p$port "/scripts/easyapache --build"
  unset mysqlupcheck
 fi
 
 #postgres
 if [ $postgres ]; then
- echo "Installing Postgresql..."
+ ec yellow "Installing Postgresql..."
  #use expect to install since it asks for input
  ssh $ip -p$port 'cp -rp /var/lib/pgsql{,.bak}
  expect -c "spawn /scripts/installpostgres
@@ -1009,10 +1038,10 @@ fi
 
 acctcopy() {
 echo
-echo "Packaging cpanel accounts and restoring on remote server..." 
+ec yellow "Packaging cpanel accounts and restoring on remote server..." 
 syncstarttime=`date +%F.%T`
 #backup userlist variable
-echo $userlist > /root/userlist.txt
+echo $userlist > $userlistfile
 #setup a counter to track account progress
 acct_num=1
 total_accts=`echo $userlist | tr ' ' '\n' |wc -l`
@@ -1028,38 +1057,44 @@ for user in $userlist; do
   #account progress
   acct_progress="( $acct_num / $total_accts )"
   userip=`grep ^IP= /var/cpanel/users/$user|cut -d '=' -f2`
-  logvars user userip
-  echo "${acct_progress} Packaging $user. "  
+  logvars user userip acct_progress
+  ec grey "${acct_progress} Packaging $user. "  
   /scripts/pkgacct --skiphomedir $user >> $scriptlog
-  echo "${acct_progress} Rsyncing cpmove-$user.tar.gz to $ip:/home/" 
-  rsync -aqHlPe "ssh -p$port" /home*/cpmove-$user.tar.gz $ip:/home 
-  echo "${acct_progress} Restoring account $user" 
-  #ipcheck returns one if Restore To Dedicated Ips is seletcted by the user
-  #If the user ip doesn't equal the main server ip, then it is is on a dedicated ip
-  if [[ $userip != $mainip && $ipcheck = 1 ]] ; then
-    restoretodedip=1
-  elif [[ $forcededip = 1 ]]; then  #singleuser sync does this, just a way to force it if needed
-    restoretodedip=1  
+  #check if the cpmove file was created
+  if [ -f "/home/cpmove-$user.tar.gz" ]; then
+    ec brown "${acct_progress} Rsyncing cpmove-$user.tar.gz to $ip:/home/" 
+    rsync -aqHlPe "ssh -p$port" /home/cpmove-$user.tar.gz $ip:/home 
+    ec yellow "${acct_progress} Restoring account $user" 
+    #ipcheck returns one if Restore To Dedicated Ips is seletcted by the user
+    #If the user ip doesn't equal the main server ip, then it is is on a dedicated ip
+    if [[ $userip != $mainip && $ipcheck = 1 ]] ; then
+      restoretodedip=1
+    elif [[ $forcededip = 1 ]]; then  #singleuser sync does this, just a way to force it if needed
+      restoretodedip=1  
+    else
+      restoretodedip=0
+    fi
+    logvars restoretodedip
+    #build restorepkg command
+    if [[ $restoretodedip = 1 ]]; then
+      restorecmd="/scripts/restorepkg --ip=y /home/temp/cpmove-$user.tar.gz"
+    else
+      restorecmd="/scripts/restorepkg /home/temp/cpmove-$user.tar.gz"
+    fi
+    logvars restorecmd
+    #do the restorepkg command
+    ssh $ip -p$port "mkdir -p /home/temp ;
+    mv /home/cpmove-$user.tar.gz /home/temp/;
+    $restorecmd ; 
+    mv /home/temp/cpmove-$user.tar.gz /home/" 
+    #make sure user restored, rsync homedir
+    rsynchomedirs
   else
-    restoretodedip=0
+    #cpmove file wasn't created
+    ec lightRed "Did not find cpmove backup file for $user!"
+    echo $user >> $dnr
+    sleep 1
   fi
-  logvars restoretodedip
-  #build restorepkg command
-  if [[ $restoretodedip = 1 ]]; then
-    restorecmd="/scripts/restorepkg --ip=y /home/temp/cpmove-$user.tar.gz"
-  elif [[ "$keepoldips" ]]; then  #this is old, probly can remove
-    restorecmd="/scripts/restorepkg --ip=$userip /home/temp/cpmove-$user.tar.gz"
-  else
-    restorecmd="/scripts/restorepkg /home/temp/cpmove-$user.tar.gz"
-  fi
-  logvars restorecmd
-  #do the restorepkg command
-  ssh $ip -p$port "mkdir -p /home/temp ;
-  mv /home/cpmove-$user.tar.gz /home/temp/;
-  $restorecmd ; 
-  mv /home/temp/cpmove-$user.tar.gz /home/" 
-  #make sure user restored, rsync homedir
-  rsynchomedirs
   acct_num=$(( $acct_num+1 ))
 done  
 syncendtime=`date +%F.%T`
@@ -1080,7 +1115,7 @@ if [ "$user" == "$ruser" ]; then
   #check for non-empty vars
   if [ $userhomelocal ]; then
     if [ $userhomeremote ]; then
-     echo "${acct_progress} Syncing Home directory for $user. $userhomelocal to ${ip}:${userhomeremote}" 
+     ec white "${acct_progress} Syncing Home directory for $user. $userhomelocal to ${ip}:${userhomeremote}" 
      echo "Please wait..."
      #add update flag for final rsync to add --update flag for rsync, doesn't over write files updated on the new server.
       if [ $rsyncupdate ]; then
@@ -1092,18 +1127,19 @@ if [ "$user" == "$ruser" ]; then
     rsync $rsyncflags -e  "ssh -p$port" ${userhomelocal}/ ${ip}:${userhomeremote}/ >> $scriptlog 
     else
      #remote fails
-     echo "Remote path for $user not found."
+     ec lightRed "Remote path for $user not found."
      echo "$user remote path not found: \"$userhomeremote\"" >> /tmp/remotefail.txt
      echo $user >> $dnr 
     fi
   else
     #local fails
-    echo "Local path for $user not found."
+    ec lightRed  "Local path for $user not found."
     echo "$user local path not found: \"$userhomelocal\"" >> /tmp/localfail.txt
     echo $user >> $dnr
   fi
 else 
  #didn't find user on remote 
+ ec lightRed "User $user was not found in /var/cpanel/users on remote server."
  echo $user >> $dnr
 fi
 echo  
@@ -1113,27 +1149,24 @@ didntrestore() {
 #loop finished, check for users that didn't restore
 if [ -s /tmp/localfail.txt ]; then
  echo
- echo "Couldnt find users local home directory path:"
+ ec lightRed "Couldnt find users local home directory path:"
  cat /tmp/localfail.txt
- echo "enter to continue"
- read
+ e2c
 fi
 
 if [ -s /tmp/remotefail.txt ]; then
  echo
- echo "Couldnt find users remote directory path:"
+ ec lightRed "Couldnt find users remote directory path:"
  cat /tmp/remotefail.txt
- echo "enter to continue"
- read
+ e2c
 fi
 
 if [ -s $dnr ]; then 
- echo '--did not restore--' 
+ ec lightRed '--did not restore--' 
  cat $dnr 
- echo '-------------------'
+ ec lightRed '-------------------'
  echo 'You can re-run this script and run the basic sync to restore these users if desired.'
- echo 'Press enter to continue...'
- read
+ e2c
 fi
 }
 
@@ -1172,7 +1205,7 @@ finalchecks() {
 finalfixes
 
 echo
-echo "===Final Checks===" 
+ec yellow "===Final Checks===" 
 
 #3rdparty stuff for which there is no autoinstall for (yet)
 if [ "${xcachefound}${eaccelfound}${nginxfound}" ]; then
@@ -1180,13 +1213,14 @@ echo '3rd party stuff found on the old server!'
 [ "$xcachefound" ] && echo "Xcache: $xcachefound" 
 [ "$eaccelfound" ] && echo "Eaccelerator: $eaccelfound" 
 [ "$nginxfound" ] && echo "Nginx: $nginxfound" 
-echo 'It is up to you to install these. Enter to continue'
-read
+echo 'It is up to you to install these.'
+e2c
 fi
 
 #phpapicheck
 if [ $phpapicheck ]; then
- echo 'The php api check failed, make sure it matches up on the new server!' 
+ ec lightRed 'The php api check failed, make sure it matches up on the new server!' 
+ e2c
 fi
 
 #phpmemcheck
@@ -1204,12 +1238,9 @@ if [ "${skippedea}${mysqlupcheck}" ]; then
   echo "Mysql versions:"
   echo "Source: $smysqlv" 
   echo "Dest: $dmysqlv" 
-  if yesNo 'We detected that Easyapache should be ran on the new server. Was it ran?' ;then
-    echo "Ok, moving on."
-  else
-    echo "You can run it now on the new server. Please enter y to continue regardless."
-    sleep 2
-  fi
+
+  ec lightRed 'We detected that Easyapache should be ran on the new server. Please run it now if still needed!'
+  e2c
   #fix php handlers if EA was skipped, could fail if php4 was mising before.
   phpapicheck
 fi
@@ -1217,35 +1248,26 @@ fi
 php3rdpartyapps
 
 if [ -s /etc/remotedomains ]; then
- echo 'Domains found in /etc/remotedomains, double check their mx settings!' 
- cat /etc/remotedomains
- echo 'Press enter to continue...' 
- read
+  ec lightRed 'Domains found in /etc/remotedomains, double check their mx settings!' 
+  cat /etc/remotedomains
+  e2c  
 fi
 
 
 if [ $localcluster ];then
- echo 'Local DNS clustering was found! May need to setup on the new server.' 
- echo 'Press enter to continue...'
- read
+ ec lightRed 'Local DNS clustering was found! May need to setup on the new server.' 
+ e2c  
 fi
-
-#if keep old ips was set, stop ipaliases on the new server, to prevent it from 'stealing' the ips if the old server goes offline.
-if [ $keepoldips ]; then
- echo "Stopping Ip aliases on new server to prevent Ip stealing on new server." 
- ssh -p$port $ip "/etc/init.d/ipaliases stop"
-fi
- 
 
 #check for alternate exim ports
 eximports=`grep ^daemon_smtp_ports /etc/exim.conf`
 eximportsremote=`ssh $ip -p$port 'grep daemon_smtp_ports /etc/exim.conf'`
 logvars eximportsremote eximports
 if [ "$eximports" != "$eximportsremote" ]; then
- echo 'Alternate smtp ports found!' 
+ ec lightRed 'Alternate smtp ports found!' 
  echo $eximports
- echo 'Set them up within WHM on the new server. (enter to continue)' 
- read
+ echo 'Set them up within WHM on the new server.'
+ e2c
  else
  echo 'Exim ports match!' 
 fi
@@ -1270,10 +1292,9 @@ if [ -s /root/dblist.txt ]; then
  rsync --progress -avHlze "ssh -p$port" /home/dbdumps $ip:/home/
 # ssh $ip -p$port "wget migration.sysres.liquidweb.com/dbsync.sh -O /scripts/dbsync.sh; screen -S dbsync -d -m bash /scripts/dbsync.sh" &
 dbsyncscript
- echo "Databases restoring in screen dbsync on remote server." 
- echo "Mysql user permissions will need to be restored to the new server."
- echo "Enter to continue."
- read
+ ec yellow "Databases restoring in screen dbsync on remote server." 
+ ec lightRed "Mysql user permissions will need to be restored to the new server."
+ e2c
 else
  echo "Did not find /root/dblist.txt" 
 fi
@@ -1351,24 +1372,24 @@ echo
 echo "Running final sync..." 
 finalsynccheck=1
 #check for previous migration
-if [ -s /root/userlist.txt ]; then 
- echo "Found /root/userlist.txt." 
- userlist=`cat /root/userlist.txt`
+if [ -s $userlistfile ]; then 
+ echo "Found $userlistfile." 
+ userlist=`cat $userlistfile`
  echo "$userlist" 
  if yesNo "Are these users correct?"; then
   echo "Continuing." 
  else
   if yesNo "Would you like to migrate all users?"; then
    echo "Syncing all users." 
-   userlist=`/bin/ls -A /var/cpanel/users`
+   userlist=$allcpusers
   else
-   echo "Please edit /root/userlist.txt with the users you wish to migrate and rerun the script."
+   echo "Please edit $userlistfile with the users you wish to migrate and rerun the script."
    exit 0
   fi
  fi 
 else
  echo "Syncing all users." 
- userlist=`/bin/ls -A /var/cpanel/users`
+ userlist=$allcpusers
  echo "$userlist" 
 fi
 sleep 3
@@ -1439,7 +1460,6 @@ if [ $copydns ]; then
   nsdc rebuild
   nsdc reload
  fi
-
 fi
 
 #restart services
@@ -1454,7 +1474,6 @@ if [ $restartservices ]; then
 else
  echo "Skipping restart of services..."
 fi
-
 
 syncendtime=`date +%F.%T`
 
