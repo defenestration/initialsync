@@ -971,8 +971,8 @@ for prog in $proglist; do
  if [ "${!prog}" ] ; then
   echo "${prog}"
  fi
-sleep 3
 done
+sleep 3
 ec lightGreen "Ready to begin installing and start the initial sync!"
 e2c
 
