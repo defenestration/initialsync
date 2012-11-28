@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Nov 26 2012"
+ver="Nov 28 2012"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -176,6 +176,12 @@ done
 
 menutext() {
 echo "Version: $ver"
+if [[ ! "${STY}" ]]; then
+ ec lightRed "
+Warning! You are not in a screen session!
+"
+fi
+
 ec greyBg "=Initialsync Main Menu=
 Select the migration type:"
 echo "1) Full sync (from $userlistfile or all users, version matching)
@@ -837,7 +843,7 @@ if ! [ "$dbprefixvar" = "database_prefix=0" ]; then
  echo
  echo "Checking for extra mysql databases..." 
  mkdir -p /home/temp/
- mysql -e 'show databases' |grep -v ^cphulkd |grep -v ^information_schema |grep -v ^eximstats |grep -v ^horde | grep -v leechprotect |grep -v ^modsec |grep -v ^mysql |grep -v ^roundcube |grep -v ^Database | grep -v ^logaholicDB |grep -v '*' > /home/temp/dblist.txt
+ mysql -e 'show databases' |grep -v ^cphulkd |grep -v ^information_schema |grep -v ^eximstats |grep -v ^horde | grep -v leechprotect |grep -v ^modsec |grep -v ^mysql |grep -v ^roundcube |grep -v ^Database | grep -v ^logaholicDB | grep -v ^performance_schema |grep -v '*' > /home/temp/dblist.txt
 #still have user_ databases, filter those.
  cp -rp /home/temp/dblist.txt /home/temp/extradbs.txt
  #get all users here, not userlist.
