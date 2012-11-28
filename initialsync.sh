@@ -87,6 +87,7 @@ ver="Nov 28 2012"
 # Nov  7 - Minor update to 'was EA ran' query, detecition that cpmove file was created on source before coyping. Didnotrestore.txt changed to /root directory.
 # Nov 20 - add allcpusers variable to filter out 'root' and 'system' from cpanel users. Initial Color support.
 # Nov 21 - e2c function, colorizing. removed some keepoldips code.
+# Nov 27 - Check for screen session, backup /root/domainlist.txt, /root/userlist.txt
 
 #######################
 #log when the script starts
@@ -273,7 +274,7 @@ while [ $singleuserloop == 0 ]; do
       echo "Leaving key."
     fi
   else
-    echo "Could not find $userlist." 
+    ec lightRed "Could not find $userlist." 
   fi
 done
 }
@@ -505,11 +506,14 @@ if [ -f /root/dns.txt ]; then
  sleep 3
  cat /root/dns.txt | sort -n +3 -2 | more
 else
- for user in $userlist; do cat /etc/userdomains | grep $user | cut -d: -f1 >> /root/domainlist.txt; done
- domainlist=`cat /root/domainlist.txt`
- logvars domainlist
- for each in $domainlist; do echo $each\ `dig @8.8.8.8 NS +short $each |sed 's/\.$//g'`\ `dig @8.8.8.8 +short $each` ;done | grep -v \ \ | column -t > /root/dns.txt
- cat /root/dns.txt | sort -n +3 -2 | more
+  if [ -f "/root/domainlist.txt" ]; then
+    mv /root/domainlist.txt /root/domainlist.txt.${starttime}.bak
+  fi
+  for user in $userlist; do cat /etc/userdomains | grep $user | cut -d: -f1 >> /root/domainlist.txt; done
+  domainlist=`cat /root/domainlist.txt`
+  logvars domainlist
+  for each in $domainlist; do echo $each\ `dig @8.8.8.8 NS +short $each |sed 's/\.$//g'`\ `dig @8.8.8.8 +short $each` ;done | grep -v \ \ | column -t > /root/dns.txt
+  cat /root/dns.txt | sort -n +3 -2 | more
 fi
 e2c
 }
@@ -618,7 +622,7 @@ echo "Comparing accounts with destination server"
 for user in $userlist ; do ssh -qt $ip -p$port " if [ -f /var/cpanel/users/$user ]; then echo $user;fi"  ; done > /root/userexists.txt
 #check for userexists.txt greater than 0
 if [ -s /root/userexists.txt ]; then
- echo 'Accounts that conflict with the destination server.' 
+ ec lightRed 'Accounts that conflict with the destination server.' 
  cat /root/userexists.txt 
  if yesNo "Y to continue, N to exit."; then
   echo "Continuing..."
@@ -1047,6 +1051,9 @@ echo
 ec yellow "Packaging cpanel accounts and restoring on remote server..." 
 syncstarttime=`date +%F.%T`
 #backup userlist variable
+if [ -f "$userlistfile" ]; then
+  mv $userlistfile $userlistfile.$starttime.bak
+fi
 echo $userlist > $userlistfile
 #setup a counter to track account progress
 acct_num=1
