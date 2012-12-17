@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Nov 28 2012"
+ver="Dec 17 2012"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -88,6 +88,7 @@ ver="Nov 28 2012"
 # Nov 20 - add allcpusers variable to filter out 'root' and 'system' from cpanel users. Initial Color support.
 # Nov 21 - e2c function, colorizing. removed some keepoldips code.
 # Nov 27 - Check for screen session, backup /root/domainlist.txt, /root/userlist.txt
+# Dec 17 - removed possibility for * entries in preliminary_ip_check variable
 
 #######################
 #log when the script starts
@@ -640,7 +641,7 @@ echo "Checking for dedicated Ips."
 # If /etc/userdatadomains exists, calculate dedicated IPs based on usage.
 # Otherwise uses same functionality as before.
 if [[ -f /etc/userdatadomains ]]; then
-  preliminary_ip_check=`cat /etc/userdatadomains|sed -e 's/:/ /g' -e 's/==/ /g'|cut -d ' ' -f8|tr -d [:blank:]|sort|uniq`
+  preliminary_ip_check=`cat /etc/userdatadomains|sed -e 's/:/ /g' -e 's/==/ /g' -e '/\*/d' |cut -d ' ' -f8|tr -d [:blank:]|sort|uniq`
   server_main_ip=`cat /etc/wwwacct.conf|grep ADDR|cut -d ' ' -f2`
   for preliminary_ips in $preliminary_ip_check; do
     if [[ $preliminary_ips != $server_main_ip ]]; then
