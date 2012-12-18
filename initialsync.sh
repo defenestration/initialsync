@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Dec 17 2012"
+ver="Dec 18 2012"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -89,6 +89,7 @@ ver="Dec 17 2012"
 # Nov 21 - e2c function, colorizing. removed some keepoldips code.
 # Nov 27 - Check for screen session, backup /root/domainlist.txt, /root/userlist.txt
 # Dec 17 - removed possibility for * entries in preliminary_ip_check variable
+# Dec 18 - check /home* for cpmove files
 
 #######################
 #log when the script starts
@@ -105,7 +106,7 @@ mysqldumplog="/tmp/mysqldump.log"
 > /tmp/localfail.txt
 > /tmp/migration.rsync.log
 mkdir -p $scriptlogdir
-touch $scriptlog
+echo $ver > $scriptlog
 allcpusers=`/bin/ls -A /var/cpanel/users | grep -v ^root$ | grep -v ^system$`
 
 #colors
@@ -1059,7 +1060,6 @@ echo $userlist > $userlistfile
 #setup a counter to track account progress
 acct_num=1
 total_accts=`echo $userlist | tr ' ' '\n' |wc -l`
-
 #backup userlist of users that didn't restore, if it exists
 if [ -f "$dnr" ]; then
   cp -rpf ${dnr}{,.bak.$starttime}
@@ -1074,40 +1074,54 @@ for user in $userlist; do
   logvars user userip acct_progress
   ec grey "${acct_progress} Packaging $user. "  
   /scripts/pkgacct --skiphomedir $user >> $scriptlog
-  #check if the cpmove file was created
-  if [ -f "/home/cpmove-$user.tar.gz" ]; then
-    ec brown "${acct_progress} Rsyncing cpmove-$user.tar.gz to $ip:/home/" 
-    rsync -aqHlPe "ssh -p$port" /home/cpmove-$user.tar.gz $ip:/home 
-    ec yellow "${acct_progress} Restoring account $user" 
-    #ipcheck returns one if Restore To Dedicated Ips is seletcted by the user
-    #If the user ip doesn't equal the main server ip, then it is is on a dedicated ip
-    if [[ $userip != $mainip && $ipcheck = 1 ]] ; then
-      restoretodedip=1
-    elif [[ $forcededip = 1 ]]; then  #singleuser sync does this, just a way to force it if needed
-      restoretodedip=1  
+  #check for location of packaged account ( could be home2 )
+  cpmovefiles=`find /home*/ -name cpmove-$user.tar.gz -maxdepth 1 -mtime -2`
+  #check if more than one cpmove file is found:
+  cpmovefilecount=`echo $cpmovefiles | wc -w`
+  if [[ $cpmovefilecount -eq 1 ]]; then
+    #only 1 file found, continue.
+    cpmovefile=$cpmovefiles
+    #check if the cpmove file was created
+    if [ -f "$cpmovefile" ]; then
+      ec brown "${acct_progress} Rsyncing $cpmovefile to $ip:/home/" 
+      rsync -aqHlPe "ssh -p$port" $cpmovefile $ip:/home 
+      ec yellow "${acct_progress} Restoring account $user" 
+      #ipcheck returns one if Restore To Dedicated Ips is seletcted by the user
+      #If the user ip doesn't equal the main server ip, then it is is on a dedicated ip
+      if [[ $userip != $mainip && $ipcheck = 1 ]] ; then
+        restoretodedip=1
+      elif [[ $forcededip = 1 ]]; then  #singleuser sync does this, just a way to force it if needed
+        restoretodedip=1  
+      else
+        restoretodedip=0
+      fi
+      logvars restoretodedip
+      #build restorepkg command
+      if [[ $restoretodedip = 1 ]]; then
+        restorecmd="/scripts/restorepkg --ip=y /home/temp/cpmove-$user.tar.gz"
+      else
+        restorecmd="/scripts/restorepkg /home/temp/cpmove-$user.tar.gz"
+      fi
+      logvars restorecmd
+      #do the restorepkg command
+      ssh $ip -p$port "mkdir -p /home/temp ;
+      mv /home/cpmove-$user.tar.gz /home/temp/;
+      $restorecmd ; 
+      mv /home/temp/cpmove-$user.tar.gz /home/" 
+      #make sure user restored, rsync homedir
+      rsynchomedirs
     else
-      restoretodedip=0
+      #cpmove file wasn't created
+      ec lightRed "Did not find cpmove backup file for $user!"
+      echo $user >> $dnr
+      sleep 1
     fi
-    logvars restoretodedip
-    #build restorepkg command
-    if [[ $restoretodedip = 1 ]]; then
-      restorecmd="/scripts/restorepkg --ip=y /home/temp/cpmove-$user.tar.gz"
-    else
-      restorecmd="/scripts/restorepkg /home/temp/cpmove-$user.tar.gz"
-    fi
-    logvars restorecmd
-    #do the restorepkg command
-    ssh $ip -p$port "mkdir -p /home/temp ;
-    mv /home/cpmove-$user.tar.gz /home/temp/;
-    $restorecmd ; 
-    mv /home/temp/cpmove-$user.tar.gz /home/" 
-    #make sure user restored, rsync homedir
-    rsynchomedirs
   else
-    #cpmove file wasn't created
-    ec lightRed "Did not find cpmove backup file for $user!"
-    echo $user >> $dnr
-    sleep 1
+    #anythign other than 1 cpmove file was found, show error
+    ec lightRed "Found $cpmovefilecount cpmove files, please remove extra files."
+    for file in $cpmovefiles; do 
+      ls -lah $file;
+    done
   fi
   acct_num=$(( $acct_num+1 ))
 done  
