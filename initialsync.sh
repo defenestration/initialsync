@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Dec 18 2012"
+ver="Jan 16 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -90,7 +90,7 @@ ver="Dec 18 2012"
 # Nov 27 - Check for screen session, backup /root/domainlist.txt, /root/userlist.txt
 # Dec 17 - removed possibility for * entries in preliminary_ip_check variable
 # Dec 18 - check /home* for cpmove files
-
+# Jan 16 2013 - authorized_keys was still holding the key if it was written to twice.  expanded so that authorized_keys.initialsyncbak wouldn't be overwritten if it existed. 
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
@@ -271,7 +271,7 @@ while [ $singleuserloop == 0 ]; do
     echo
     if yesNo "Remove ssh key from remote server?" ; then
       echo "Removing key..."
-      ssh -p$port $ip "rm ~/.ssh/authorized_keys ; cp -rp ~/.ssh/authorized_keys{.syncbak,}"
+      ssh -p$port $ip "rm ~/.ssh/authorized_keys ; cp -rp ~/.ssh/authorized_keys{.initialsyncbak,}"
     else
       echo "Leaving key."
     fi
@@ -454,7 +454,7 @@ echo
 echo "Generated hosts file at http://${ip}/hosts.txt." 
 fi
 EOF
-rsync -avHPe "ssh -p$port" /scripts/hosts.sh $ip:/scripts/
+rsync -aqHPe "ssh -p$port" /scripts/hosts.sh $ip:/scripts/
 ssh -p$port $ip "bash /scripts/hosts.sh"
 sleep 2
 }
@@ -604,7 +604,10 @@ else
   echo "SSH key found." 
 fi
 echo "Copying Key to remote server..." 
-cat ~/.ssh/id_rsa.pub | ssh $ip -p$port "cp -rp ~/.ssh/authorized_keys{,.syncbak} ; mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys"
+#create .ssh directory
+#create authorized key file if it doesn't exist (for non-existing files) backup the file to syncbak, this will keep existing and blank files.
+#don't overwrite existing .initialsyncbak files.
+cat ~/.ssh/id_rsa.pub | ssh $ip -p$port "mkdir -p ~/.ssh ; if [ ! -f ~/.ssh/authorized_keys ] ; then touch ~/.ssh/authorized_keys ; fi; if [ ! -f ~/.ssh/authorized_keys.initialsyncbak ] ; then cp -rp ~/.ssh/authorized_keys{,.initialsyncbak} ; fi ; cat >> ~/.ssh/authorized_keys"
 sshtest=$?
 #test exit value of ssh command.
 if [[ "$sshtest" > 0 ]]; then 
@@ -1527,9 +1530,9 @@ echo "============"
 echo
 if yesNo "Remove SSH key from new server?"; then
   ssh -p${port} root@$ip "
-  mv ~/.ssh/authorized_keys{,.initialsync.`date +%F`}; 
-  if [ -f ~/.ssh/authorized_keys.syncbak ]; then 
-    cp -rp ~/.ssh/authorized_keys{.syncbak,}; 
+  mv ~/.ssh/authorized_keys{,.initialsync.$starttime}; 
+  if [ -f ~/.ssh/authorized_keys.initialsyncbak ]; then 
+    cp -rp ~/.ssh/authorized_keys{.initialsyncbak,}; 
   fi"
 fi
 
