@@ -1,14 +1,17 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Jan 16 2013"
+ver="Feb 20 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
 #todo: 
 # copy modsec configs? or at least display it.
 # make ssh have quieter output? tried and failed before though.
-# sslcheck - sanitize * in cert file names.
-#
+#(03:00:05 PM) Andrej Walilko: accountcheck(), for when you get in
+#(03:00:46 PM) Andrej Walilko: this runs a bit long for servers with a lot of accounts, might investigate pulling a copy of the account list from the remote server and doing a diff locally
+#(03:02:27 PM) Andrej Walilko: a lot being more than 300
+#(03:38:34 PM) Andrej Walilko: ``rsync -aqHPe "ssh -p$port" /var/spool $ip:/var/`` also this is included on the final sync without option, might want to check for centos6 on target
+
 
 # Presync:
 # streamline initial choice logic
@@ -91,6 +94,9 @@ ver="Jan 16 2013"
 # Dec 17 - removed possibility for * entries in preliminary_ip_check variable
 # Dec 18 - check /home* for cpmove files
 # Jan 16 2013 - authorized_keys was still holding the key if it was written to twice.  expanded so that authorized_keys.initialsyncbak wouldn't be overwritten if it existed. 
+# Jan 23 - added gem install to a screen, sometimes it holds up the migration.  started modsec function. postmigrationhook
+# Feb 20 - More verbose error and added pause for finding multiple cpmove files for a user in /home2 /home3 etc..
+
 #######################
 #log when the script starts
 starttime=`date +%F.%T`
@@ -193,7 +199,9 @@ echo "1) Full sync (from $userlistfile or all users, version matching)
 4) User list sync (from $userlistfile, no version matching)
 8) Database sync - only sync databases for cpanel users, and from /root/dblist.txt.
 9) Final sync (from $userlistfile or all users)
-0) Quit"
+0) Quit
+
+Post migration script can now be added at /root/postmigration.sh to run after the final sync if desired."
 }
 
 main() {
@@ -368,6 +376,7 @@ didntrestore
 mysqlextradbcheck
 mysqldumpinitialsync
 cpbackupcheck
+postmigrationhook
 finalchecks
 hostsgen
 }
@@ -1121,10 +1130,12 @@ for user in $userlist; do
     fi
   else
     #anythign other than 1 cpmove file was found, show error
-    ec lightRed "Found $cpmovefilecount cpmove files, please remove extra files."
+    ec lightRed "Found $cpmovefilecount cpmove files, dont know which one is good. User $user will not be copied."
     for file in $cpmovefiles; do 
       ls -lah $file;
     done
+    echo $user >> $dnr
+    e2c 
   fi
   acct_num=$(( $acct_num+1 ))
 done  
@@ -1520,6 +1531,8 @@ if [ -s /tmp/mysqldump.log ]; then
  sleep 1
 fi
 
+postmigrationhook
+
 echo "=Actions taken:="
 if [ $stopservices ]; then 
  echo "Stopped services"
@@ -1573,8 +1586,10 @@ echo "Copying ruby gems over to new server."
 gem list | tail -n+4 | awk '{print $1}' > /root/gemlist.txt
 echo "gemlist:" 
 cat /root/gemlist.txt 
-rsync -avHPe "ssh -p$port" /root/gemlist.txt $ip:/root/
-ssh -p$port $ip " cat /root/gemlist.txt | xargs gem install " 
+echo 'cat /root/gemlist.txt | xargs gem install' > /root/geminstall.sh
+chmod +x /root/geminstall.sh
+rsync -avHPe "ssh -p$port" /root/geminstall.sh /root/gemlist.txt $ip:/root/
+ssh -p$port $ip "screen -S geminstall -d -m bash /root/geminstall.sh" &
 }
 
 cpbackupcheck() {
@@ -1617,6 +1632,56 @@ echo "Matching PEAR packages..."
 pear list | egrep [0-9]{1}.[0-9]{1} | awk '{print$1}' > /root/pearlist.txt
 scp -P$port /root/pearlist.txt root@$ip:/root/
 ssh $ip -p$port "cat /root/pearlist.txt |xargs pear install $pear"
+}
+
+modsecmatch() {
+  #centos=`cat /etc/redhat-release |cut -d" " -f3`
+  #check for installed modsec version
+  #if 5 or less, lpyum is used, 6 uses regular yum
+  #if [[ $centos -lt 6 ]]; then
+
+  #just use rpm to check
+  modsec=`rpm -qa --queryformat "[%{name}\n]" lp-modsec*` #lp-modsec2-rules
+  #if rpm finds multiple installed modsec?
+  echo "Modsec version $modsec found."
+  #check remote server for modsec version
+  modsecremote=`ssh -p$port $ip 'rpm -qa --queryformat "[%{name}\n]" lp-modsec*' `
+  #turtle-rules files: /usr/local/apache/conf/turtle-rules/modsec/00_asl_whitelist.conf
+  #/usr/local/apache/conf/modsec/lw_whitelist.conf /usr/local/apache/conf/modsec2/lw_whitelist.conf
+  
+
+  modseccopy() {
+    #install on remote server?    
+    ssh -p$port $ip "cp -rp $modsecwlist{,.initialsync.$starttime.bak} "
+    rsync -avHP -e "ssh -p$port" $modsecwlist $ip:$modsecwlist
+  }
+  case $modsec in 
+    lp-modsec2-rules) 
+      modsecwlist="/usr/local/apache/conf/modsec2/whitelist.conf"
+      modseccopy
+      ;;
+    lp-modsec-rules)
+      modsecwlist="/usr/local/apache/conf/modsec/whitelist.conf"
+      modseccopy
+      ;;
+    *)
+      echo "Modsec case not found"
+      ;;
+  esac
+}
+
+postmigrationhook() {
+  #run a custom script once the migration is complete:
+  echo "Checking for post migration scripts to run."
+  postmigscript="/root/postmigration.sh"
+  if [ -f "$postmigscript" ]; then
+    if yesNo "Found $postmigscript, run it?"; then
+      bash $postmigscript 
+      echo "Finished $postmigscript"
+    fi
+  else 
+    echo "None found."
+  fi
 }
 
 #run main last so all functions are loaded
