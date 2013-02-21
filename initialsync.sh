@@ -1,24 +1,17 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Feb 20 2013"
+ver="Feb 21 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
 #todo: 
 # copy modsec configs? or at least display it.
 # make ssh have quieter output? tried and failed before though.
-#(03:00:05 PM) Andrej Walilko: accountcheck(), for when you get in
-#(03:00:46 PM) Andrej Walilko: this runs a bit long for servers with a lot of accounts, might investigate pulling a copy of the account list from the remote server and doing a diff locally
-#(03:02:27 PM) Andrej Walilko: a lot being more than 300
-#(03:38:34 PM) Andrej Walilko: ``rsync -aqHPe "ssh -p$port" /var/spool $ip:/var/`` also this is included on the final sync without option, might want to check for centos6 on target
-
 
 # Presync:
 # streamline initial choice logic
 # get domains associated with users, for copying over zone files from new server. lower TTls only for domains that are migrating?
 # check for remote mysql server, /root/.my.cnf, check for blank /etc/my.cnf
-# Show number of total cpanel users compared to what the script found in userlist.txt.
-# Show a count of accounts left to sync during the sync like (2/15 synced)
 # Compare disk space of partitions
 
 # Finalchecks:
@@ -95,7 +88,7 @@ ver="Feb 20 2013"
 # Dec 18 - check /home* for cpmove files
 # Jan 16 2013 - authorized_keys was still holding the key if it was written to twice.  expanded so that authorized_keys.initialsyncbak wouldn't be overwritten if it existed. 
 # Jan 23 - added gem install to a screen, sometimes it holds up the migration.  started modsec function. postmigrationhook
-# Feb 20 - More verbose error and added pause for finding multiple cpmove files for a user in /home2 /home3 etc..
+# Feb 20 - More verbose error and added pause for finding multiple cpmove files for a user in /home2 /home3 etc.  also download a remoteuserlist from the destination server to compare rather than SSH to check each time.  remove final sync of /var/spool, since supposedly causes issues with cent6.
 
 #######################
 #log when the script starts
@@ -106,6 +99,7 @@ dnr=/root/didnotrestore.txt
 userlistfile=/root/userlist.txt
 rsyncflags="-avHl"
 mysqldumplog="/tmp/mysqldump.log"
+remoteusersfile="/home/temp/remoteusers.txt"
 [ -s $dnr ] && dnrusers=`cat $dnr`
 #for home2 
 > /tmp/remotefail.txt
@@ -633,7 +627,12 @@ fi
 accountcheck() { #check for users with the same name on each server:
 echo
 echo "Comparing accounts with destination server" 
-for user in $userlist ; do ssh -qt $ip -p$port " if [ -f /var/cpanel/users/$user ]; then echo $user;fi"  ; done > /root/userexists.txt
+ssh -qt $ip -p$port "/bin/ls -A /var/cpanel/users/" > $remoteusersfile
+for user in $userlist ; do 
+  if [ `grep "^$user$" "$remoteusersfile"` ]; then 
+    echo $user
+  fi  
+done > /root/userexists.txt
 #check for userexists.txt greater than 0
 if [ -s /root/userexists.txt ]; then
  ec lightRed 'Accounts that conflict with the destination server.' 
@@ -648,7 +647,6 @@ fi
 }
 
 dedipcheck() { #check for same amount of dedicated ips
-
 echo
 echo "Checking for dedicated Ips." 
 # If /etc/userdatadomains exists, calculate dedicated IPs based on usage.
@@ -1483,7 +1481,9 @@ done
 
 #packages, spool data
 rsync -aqHPe "ssh -p$port" /var/cpanel/packages $ip:/var/cpanel/
-rsync -aqHPe "ssh -p$port" /var/spool $ip:/var/
+#damn them who add cronjobs after initial sync! also not supposed to do this on cent6 for some reason
+#rsync -aqHPe "ssh -p$port" /var/spool $ip:/var/
+
 
 #mailperm, fixquotas
 finalfixes
