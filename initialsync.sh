@@ -844,24 +844,23 @@ else
 fi
 
 if yesNo "Change remote server's Mysql version?"; then
-  if yesNo "Change remote server's mysql version to $smysqlv?" ; then #this would be the only way to downgrade to mysql 4.0 or 4.1
-    newmysqlver=$smysqlv 
-  else
-    mysqlverloop=0
-    while [ $mysqlverloop == 0 ]; do #asking for user input, so check for errors.
-      echo -e "Please input desired mysql version, either 5.0, 5.1 or 5.5: " #should really be upgrading to these newer versions, older than 5.0 isn't supported in cpanel 11.36
-      read newmysqlver
-      case $newmysqlver in
-        5.0|5.1|5.5)
-          ec green "New server will be updated to $newmysqlver" 
-          mysqlverloop=1;;
-        *)
-          ec red "Incorrect input, try again." ;;
-      esac
-    done
-  fi
+  mysqlverloop=0
+  while [ $mysqlverloop == 0 ]; do #asking for user input, so check for errors.
+    echo -e "Please input desired mysql version, either 5.0, 5.1 or 5.5, or n to cancel: " #should really be upgrading to these newer versions, older than 5.0 isn't supported in cpanel 11.36
+    read newmysqlver
+    case $newmysqlver in
+      5.0|5.1|5.5)
+        ec green "New server will be updated to $newmysqlver" 
+        mysqlup=1
+        mysqlverloop=1;;
+      n)
+        echo "Canceling mysql version change." 
+        mysqlverloop=1;;
+      *)
+        ec red "Incorrect input, try again." ;;
+    esac
+  done
   phpvr=`ssh $ip -p$port "php -v |head -n1 |cut -d\" \" -f2"`     #get remote php version now since mysql will not allow us to check later.
-  mysqlup=1
   logvars phpvr mysqlup newmysqlver smysqlv
 fi
 sleep 1
