@@ -1,12 +1,13 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Feb 21 2013"
+ver="Mar 20 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
 #todo: 
 # copy modsec configs? or at least display it.
 # make ssh have quieter output? tried and failed before though.
+# set variables in one spot for ease of use.
 
 # Presync:
 # streamline initial choice logic
@@ -89,6 +90,7 @@ ver="Feb 21 2013"
 # Jan 16 2013 - authorized_keys was still holding the key if it was written to twice.  expanded so that authorized_keys.initialsyncbak wouldn't be overwritten if it existed. 
 # Jan 23 - added gem install to a screen, sometimes it holds up the migration.  started modsec function. postmigrationhook
 # Feb 20 - More verbose error and added pause for finding multiple cpmove files for a user in /home2 /home3 etc.  also download a remoteuserlist from the destination server to compare rather than SSH to check each time.  remove final sync of /var/spool, since supposedly causes issues with cent6.
+# Mar 20 - Updated mysql update command for cpanel 11.36
 
 #######################
 #log when the script starts
@@ -839,14 +841,29 @@ if [ $smysqlv == $dmysqlv ]; then
  ec green "Mysql versions match." 
 else 
  ec red "Mysql versions do not match."  
- if yesNo "Change remote server's mysql version to $smysqlv?" ; then
-  #get remote php version now since mysql will not allow us to check later.
-  phpvr=`ssh $ip -p$port "php -v |head -n1 |cut -d\" \" -f2"`
+fi
+
+if yesNo "Change remote server's Mysql version?"; then
+  if yesNo "Change remote server's mysql version to $smysqlv?" ; then #this would be the only way to downgrade to mysql 4.0 or 4.1
+    #get remote php version now since mysql will not allow us to check later.
+    phpvr=`ssh $ip -p$port "php -v |head -n1 |cut -d\" \" -f2"`
+    newmysqlver=$smysqlv 
+  else
+    mysqlverloop=0
+    while [ $mysqlverloop == 0 ]; do #asking for user input, so check for errors.
+      echo -e "Please input desired mysql version, either 5.0, 5.1 or 5.5: " #should really be upgrading to these newer versions, older than 5.0 isn't supported in cpanel 11.36
+      read newmysqlver
+      case $newmysqlver in
+        5.0|5.1|5.5)
+          ec green "New server will be updated to $newmysqlver" 
+          mysqlverloop=1;;
+        *)
+          ec red "Incorrect input, try again." ;;
+      esac
+    done
+  fi
   mysqlup=1
-  logvars phpvr mysqlup
- else
-  echo "Not updating mysql." 
- fi
+  logvars phpvr mysqlup newmysqlver smysqlv
 fi
 sleep 1
 }
@@ -1022,16 +1039,21 @@ fi
 if [ $mysqlup ]; then
  ec yellow "Reinstalling mysql..."
  #mysql 5.5 won't start if safe-show-database and skip-locking are in my.cnf
+ remotecpanelversion=` ssh $ip -p$port "cat /usr/local/cpanel/version"` #cant set variables in the next script for some reason
  ssh $ip -p$port "
  sed -i.bak /mysql-version/d /var/cpanel/cpanel.config ; 
- echo mysql-version=$smysqlv >> /var/cpanel/cpanel.config ; 
+ echo mysql-version=$newmysqlver >> /var/cpanel/cpanel.config ; 
  cp -rp /etc/my.cnf{,.bak} ; 
- if [ $smysqlv > 5 ]; then
+ if [ $newmysqlver > 5 ]; then
   sed -i -e /safe-show-database/d /etc/my.cnf
   sed -i -e /skip-locking/d /etc/my.cnf
  fi
  cp -rp /var/lib/mysql{,.bak} ; 
- /scripts/mysqlup --force"
+if [ $remotecpanelversion > 11.36.0 ]; then
+  /usr/local/cpanel/scripts/check_cpanel_rpms --targets=MySQL50,MySQL51,MySQL55 --fix
+else
+  /scripts/mysqlup --force
+fi"
  echo "Mysql update completed, remember EA will need to be ran."
  mysqlupcheck=1
 fi
