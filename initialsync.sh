@@ -845,8 +845,6 @@ fi
 
 if yesNo "Change remote server's Mysql version?"; then
   if yesNo "Change remote server's mysql version to $smysqlv?" ; then #this would be the only way to downgrade to mysql 4.0 or 4.1
-    #get remote php version now since mysql will not allow us to check later.
-    phpvr=`ssh $ip -p$port "php -v |head -n1 |cut -d\" \" -f2"`
     newmysqlver=$smysqlv 
   else
     mysqlverloop=0
@@ -862,6 +860,7 @@ if yesNo "Change remote server's Mysql version?"; then
       esac
     done
   fi
+  phpvr=`ssh $ip -p$port "php -v |head -n1 |cut -d\" \" -f2"`     #get remote php version now since mysql will not allow us to check later.
   mysqlup=1
   logvars phpvr mysqlup newmysqlver smysqlv
 fi
