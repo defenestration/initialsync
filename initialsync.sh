@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Mar 20 2013"
+ver="Apr 08 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -91,6 +91,7 @@ ver="Mar 20 2013"
 # Jan 23 - added gem install to a screen, sometimes it holds up the migration.  started modsec function. postmigrationhook
 # Feb 20 - More verbose error and added pause for finding multiple cpmove files for a user in /home2 /home3 etc.  also download a remoteuserlist from the destination server to compare rather than SSH to check each time.  remove final sync of /var/spool, since supposedly causes issues with cent6.
 # Mar 20 - Updated mysql update command for cpanel 11.36
+# Apr 8 - updated hosts.sh script
 
 #######################
 #log when the script starts
@@ -439,7 +440,7 @@ fi
 if [ -s /etc/userdatadomains ]; then
 #new way for cpanel 11.27+ 
  for ips in `/scripts/ipusage | cut -d" " -f1`; do 
-  sites=`grep $ips /etc/userdatadomains |awk -F== '{print $4}'|sort |uniq | sed -e 's/\(.*\)/\1 www.\1/g' `; 
+  sites=`grep $ips /etc/userdatadomains |awk -F== '{print $1}' |cut -d: -f1 |sort |uniq | sed -e 's/\(.*\)/\1 www.\1/g' `; 
   echo $ips $sites ; 
  done | tee $hostsfile ; 
 #one line per domain (purkis way)
