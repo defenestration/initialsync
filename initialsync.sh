@@ -533,7 +533,7 @@ fi
 
 accountcheck() { #check for users with the same name on each server:
 echo
-echo "Comparing accounts with destination server" 
+echo "Comparing accounts with destination server..." 
 ssh $ip -p$port "/bin/ls -A /var/cpanel/users/" > $remoteusersfile
 for user in $userlist ; do 
   if [ `grep "^$user$" "$remoteusersfile"` ]; then 
@@ -550,6 +550,8 @@ if [ -s /tmp/userexists.txt ]; then
   echo "Exiting..."
   exit 0
  fi
+else
+  echo "No conflicting accounts found."
 fi
 }
 
