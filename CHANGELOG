@@ -36,3 +36,4 @@
 # Apr 19 - Added option to invoke --update during final rsync, rsyncupdate
 # added cpbackupcheck to enable cpanel backups on the remote server.
 # Apr 20 - clarified Override Ip check question text
+# May 09 - removed -qt from ssh in accountcheck(), it generated a hidden ^M character keeping the check from working.
