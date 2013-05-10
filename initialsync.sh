@@ -1,100 +1,9 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="Apr 08 2013"
+ver="May 10 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
-#todo: 
-# copy modsec configs? or at least display it.
-# make ssh have quieter output? tried and failed before though.
-# set variables in one spot for ease of use.
-
-# Presync:
-# streamline initial choice logic
-# get domains associated with users, for copying over zone files from new server. lower TTls only for domains that are migrating?
-# check for remote mysql server, /root/.my.cnf, check for blank /etc/my.cnf
-# Compare disk space of partitions
-
-# Finalchecks:
-# run expect on rebuildphpconf to make sure it installed correctly.
-# automatically open ports for exim, apf IG_TCP_CPORTS ,csf TCP_IN
-# copy apf/csf allow configs?
-# show failed users after hosts and checks and apps 
-
-#Changelog ###########
-# Dec19 mysqldbfinalsync, added more logging to /tmp/mysqldump.log so it would show database names. want to add a db only sync.
-# Dec 25 simplified single user sync
-# Dec 26 Added "actions taken" to end of final sync.
-# Jan 4 2012 added updating rsync to greater than 3, and logging for rsync/ found rsync loggin wiht --log-file isn't that useful actually :/  probably will want to log output of --stats but it adds the same output as -v
-# added scriptlog for version, start, choice, end times.
-# Jan 5 fixed rsync version comapre string
-# Jan 8 2012 wrapped variable in if statement in quotes in mysqlextradbcheck
-#  added rsync upgrade to final sync
-#  added apacheprepostcheck function to presync
-# Jan 16 2012 - implemented dbsync function.
-#  Added dnsclustercheck function.
-#  Tweaked apacheprepostcheck to print file contents and backup the conf file before copying.
-# Jan 17 2012 - Fixed  so mysql actually updates.
-# Jan 18 2012 - Added hosts/dbsync file script code into this script
-# Jan 19 2012 - Added additional queries for finalsync userlist verification.
-#  Added rsync logging and adjusted scriptlog location
-# Jan 22 2012 - Stop Ipaliases on new server if keepoldips is set.
-#  Added logging of pkgacct and restorepkg instead of showing to screen.
-# Jan 26 2012 - Memcache install was broken, missing a space >_< fixed.
-# Jan 29 2012 - Added mysqlsymlink check
-# Feb 1  2012 - added reloading for nsd nameserver
-#  moved imagic ffmpeg and memcache to final checks so they are installed after EA
-# Feb 2  2012 - added SSL cert check, removed IP sync migration.
-# Feb 6 2012 -  Moved sslcertcheck to presync.
-# Feb 16 2012 - Added gcccheck
-# Feb 22 2012 - Fixed path of the dest.port.txt file when inputting new destination server ip
-#  Updated single user sync to restore original authorized_keys on destination server after sync (for shared server moves)
-# Feb 28 2012 - Fixed upcp from running twice
-# Mar 22 2012 - Fixed postgres find.
-# Mar 29 2012 - Added rubygems function.
-# Apr 2 2012 - Fixed dbsync screen name
-# Apr 16 2012 source ip count improvements by jmuffett
-#   added dbonlysync var to check if only mysqldump menu option was ran.
-# Apr 17 - removed dbonlysync var, final sync wasn't syncing dbs.
-# Apr 19 - Added option to invoke --update during final rsync, rsyncupdate
-# added cpbackupcheck to enable cpanel backups on the remote server.
-# Apr 20 - clarified Override Ip check question text
-# Apr 30 - Fixed cpbackupcheck, path to cpbackup.conf
-# May  1 - Changed lowerttls to a find/sed to avoid bash wildcard completion errors
-# May  8 - postgresfound variable was not set earlier, so postgres wouldn't get installed, changed variable to postgres.
-# May 16 - dnscheck now checks for domains owned by users in /root/userlist.txt - awalilko
-# May 18 - /home/dbdumps wasn't renamed on the new server during initial sync, this could cause issues if there was a previous migration. set to rename that folder with a date on hte new server.
-# May 21 - Also check and rename /home/dbdumps on source server | skip logaholicDB copying.
-# May 25 - switched Lower TTLS to perl as sed -i doesn't exist in old versions of sed
-# Jun 05 - Added logging for which users were being migrated.
-# Jun 22 - Quoted remotednscluster like 395ish, clarified text there a little.
-# Jun 28 - Removed rsync upgrade from single user sync.
-# Jul 23 - Remove safe-show-database and skip-locking from my.cnf if mysql is being upgraded to a version greater than 5.
-# Jul 27 - Trimmed extra check function out of mysqlsymlinkcheck, updated eximcheck in finalchecks to compare ports between servers.
-# Jul 31 - Added logvars function to simplify logging, added in some areas of script.
-# Aug 7  - Exclude databases with * in the name from mysql -e show databases
-# Aug 24 - Fixed logvars function to not overwrite the log :D
-# Aug 29 - Added -y to gcc install
-# Sep 12 - Added more logging
-# Oct  2 - Option for Dedicated Ip in single user sync
-# Oct  5 - more logging to sshkeygen
-# Oct 22 - added option to remove ssh key at the end of final sync. 
-# Nov  1 - added logit function, claned up some yesNo questions
-# Nov  5 - logging during cpanel account restore. matchpear function by jacob, improved logvars, improved restorepkg logic, numbering restored accounts
-# Nov  7 - Minor update to 'was EA ran' query, detecition that cpmove file was created on source before coyping. Didnotrestore.txt changed to /root directory.
-# Nov 20 - add allcpusers variable to filter out 'root' and 'system' from cpanel users. Initial Color support.
-# Nov 21 - e2c function, colorizing. removed some keepoldips code.
-# Nov 27 - Check for screen session, backup /root/domainlist.txt, /root/userlist.txt
-# Dec 17 - removed possibility for * entries in preliminary_ip_check variable
-# Dec 18 - check /home* for cpmove files
-# Jan 16 2013 - authorized_keys was still holding the key if it was written to twice.  expanded so that authorized_keys.initialsyncbak wouldn't be overwritten if it existed. 
-# Jan 23 - added gem install to a screen, sometimes it holds up the migration.  started modsec function. postmigrationhook
-# Feb 20 - More verbose error and added pause for finding multiple cpmove files for a user in /home2 /home3 etc.  also download a remoteuserlist from the destination server to compare rather than SSH to check each time.  remove final sync of /var/spool, since supposedly causes issues with cent6.
-# Mar 20 - Updated mysql update command for cpanel 11.36
-# Apr 8 - updated hosts.sh script
-
-#######################
-#log when the script starts
 starttime=`date +%F.%T`
 scriptlogdir="/home/temp"
 scriptlog="${scriptlogdir}/initialsync.${starttime}.log"
@@ -104,10 +13,10 @@ rsyncflags="-avHl"
 mysqldumplog="/tmp/mysqldump.log"
 remoteusersfile="/home/temp/remoteusers.txt"
 [ -s $dnr ] && dnrusers=`cat $dnr`
-#for home2 
 > /tmp/remotefail.txt
 > /tmp/localfail.txt
 > /tmp/migration.rsync.log
+> /tmp/userexists.txt
 mkdir -p $scriptlogdir
 echo $ver > $scriptlog
 allcpusers=`/bin/ls -A /var/cpanel/users | grep -v ^root$ | grep -v ^system$`
@@ -132,7 +41,6 @@ white="\033[1;37m" #a bold white
 #background colors: \033[bold;color;background
 greyBg="\033[1;37;40m"
 
-
 #echo in a color function
 ec() {
 #Usage: ec color "text"
@@ -151,8 +59,6 @@ e2c() {
 logit() {
 tee -a $scriptlog
 }
-echo "Version $ver" 
-echo "Started $starttime" 
 
 yesNo() { #generic yesNo function
 #repeat if yes or no option not valid
@@ -182,10 +88,21 @@ done
 
 menutext() {
 echo "Version: $ver"
+echo
+#check for screen session
 if [[ ! "${STY}" ]]; then
- ec lightRed "
-Warning! You are not in a screen session!
-"
+  ec lightRed "Warning! You are not in a screen session!"
+  echo
+fi
+
+#check for didnotrestore now:
+if [ -s "$dnr" ]; then
+  ec lightRed "Found users that did not restore from a previous sync in $dnr!"
+  echo
+  #backup the dnr file so it will be fresh for this sync
+  mv ${dnr} ${dnr}.${starttime}.bak
+  > ${dnr}
+  logvars dnrusers
 fi
 
 ec greyBg "=Initialsync Main Menu=
@@ -194,14 +111,17 @@ echo "1) Full sync (from $userlistfile or all users, version matching)
 2) Basic sync (all users, no version matching) 
 3) Single user sync (no version matching, shared server safe)
 4) User list sync (from $userlistfile, no version matching)
+5) Restore users from $dnr. (no version matching)
 8) Database sync - only sync databases for cpanel users, and from /root/dblist.txt.
 9) Final sync (from $userlistfile or all users)
 0) Quit
 
-Post migration script can now be added at /root/postmigration.sh to run after the final sync if desired."
+Post migration script at /root/postmigration.sh will run after the final sync if found."
 }
 
 main() {
+echo "Version $ver" 
+echo "Started $starttime" 
 #menu options
 mainloop=0
 while [ $mainloop == 0 ] ; do
@@ -222,6 +142,9 @@ while [ $mainloop == 0 ] ; do
  4)
   listsync
   mainloop=1   ;;
+ 5)
+  dnrsync
+  mainloop=1 ;;
  8) 
   dbsync
   mainloop=1 ;;
@@ -251,6 +174,7 @@ userlist=$allcpusers
 getip        #asks for ip or checks a file to confirm destination
 mysqldbfinalsync
 }
+
 #sync types
 singleuser() {
 echo
@@ -286,38 +210,39 @@ while [ $singleuserloop == 0 ]; do
 done
 }
 
+dnrsync() {
+  echo "DNR sync"
+  #check the that dnr.starttime file exists, use it for list sync
+  if [ -s "${dnr}.${starttime}.bak" ]; then
+    echo $dnrusers > $userlistfile
+    listsync
+  else
+    echo "Did not find any users in the ${dnr}.${starttime}.bak file. Try a list sync instead."
+  fi
+}
+
 listsync() {
 echo
 echo "List sync." 
 listsyncvar=1
-#search for /root/users.txt and /home/users.txt
 if [ -s $userlistfile ]; then
- echo "Found $userlistfile" 
+ ec yellow "Found $userlistfile" 
  sleep 3
  userlist=`cat $userlistfile`
+ logvars userlist
  echo "$userlist" 
- basicsync
-elif [ -s /home/users.txt ]; then 
- echo "Found /home/users.txt" 
- sleep 3
- userlist=` cat /home/users.txt`
- echo "$userlist"
- basicsync
-elif [ -s /root/users.txt ]; then
- echo "found /root/users.txt" 
- userlist=`cat /root/users.txt`
- sleep 3
- basicsync
+ presync
+ copyaccounts
 else 
- echo "Did not find users.txt in /root or /home" 
+ echo "Did not find users in $userlistfile in /root or /home" 
  sleep 3
 fi
-logvars userlist
 }
 
 basicsync(){
 echo
 echo "Basic Sync started" 
+previousmigcheck
 presync
 copyaccounts
 }
@@ -326,6 +251,7 @@ fullsync() {
 echo
 echo "Full sync started" 
 #check versions,  run ea, upcp, match php versions, lots of good stuff
+previousmigcheck
 presync
 versionmatching
 copyaccounts
@@ -335,9 +261,6 @@ copyaccounts
 presync() {
 echo "Running Pre-sync functions..." 
 #get ips and such
-if ! [ "${singleuserloop}${listsyncvar}" ];then 
- dnrcheck     #userlist is defined here
-fi
 sslcertcheck
 dnscheck     #lets you view current dns
 rsyncupgrade
@@ -378,44 +301,25 @@ finalchecks
 hostsgen
 }
 
-dnrcheck() { 
-#define users
-#check and suggest to restore accounts from a previous failed migration
+previousmigcheck() { 
+#check for previous migration, and define userlist
 echo
-echo "Checking for failed migrations..."  
-if [ "$dnrusers" ];then
- echo
- ec lightRed "Found users from failed migration in $dnr" 
- echo $dnrusers
- echo
- if yesNo 'Want to restore these failed users only?' ;then
-   userlist=$dnrusers
-   mv ${dnr} ${dnr}.${starttime}.bak
-   > $dnr
- else 
-    echo "Okay, selecting all users for migration." 
+echo  "Checking for previous migrations..."
+#check for userlist file
+if [ -s $userlistfile ]; then
+ echo "$userlistfile found: " 
+ cat $userlistfile 
+  if yesNo "Do you want to use this list from $userlistfile?" ; then
+    userlist=`cat $userlistfile`
+  else
+    echo "Backing up $userlistfile to ${userlistfile}.${starttime}.bak."
+    mv $userlistfile ${userlistfile}.${starttime}.bak
+    echo "Selecting all users." 
     userlist=$allcpusers
-    mv ${dnr} ${dnr}.${starttime}.bak
-   > $dnr
- fi
-else
-  echo "No failed migrations found. Checking for previous migrations..."
-  #check for userlist file
-  if [ -s $userlistfile ]; then
-   echo "$userlistfile found: " 
-   cat $userlistfile 
-    if yesNo "Do you want to use this list from $userlistfile?" ; then
-      userlist=`cat $userlistfile`
-    else
-      echo "Backing up $userlistfile to ${userlistfile}.${starttime}.bak."
-      mv $userlistfile ${userlistfile}.${starttime}.bak
-      echo "Selecting all users." 
-      userlist=$allcpusers
-    fi
-  else 
-   echo "No previous migration found, migrating all users."
-   userlist=$allcpusers
   fi
+else 
+ echo "No previous migration found, migrating all users."
+ userlist=$allcpusers
 fi
 
 ec yellow "Users selected for migration:" 
@@ -630,16 +534,16 @@ fi
 accountcheck() { #check for users with the same name on each server:
 echo
 echo "Comparing accounts with destination server" 
-ssh -qt $ip -p$port "/bin/ls -A /var/cpanel/users/" > $remoteusersfile
+ssh $ip -p$port "/bin/ls -A /var/cpanel/users/" > $remoteusersfile
 for user in $userlist ; do 
   if [ `grep "^$user$" "$remoteusersfile"` ]; then 
     echo $user
   fi  
-done > /root/userexists.txt
+done >> /tmp/userexists.txt
 #check for userexists.txt greater than 0
-if [ -s /root/userexists.txt ]; then
- ec lightRed 'Accounts that conflict with the destination server.' 
- cat /root/userexists.txt 
+if [ -s /tmp/userexists.txt ]; then
+ ec lightRed 'Accounts that conflict with the destination server:' 
+ cat /tmp/userexists.txt 
  if yesNo "Y to continue, N to exit."; then
   echo "Continuing..."
  else
@@ -1091,10 +995,6 @@ echo $userlist > $userlistfile
 #setup a counter to track account progress
 acct_num=1
 total_accts=`echo $userlist | tr ' ' '\n' |wc -l`
-#backup userlist of users that didn't restore, if it exists
-if [ -f "$dnr" ]; then
-  cp -rpf ${dnr}{,.bak.$starttime}
-fi
 > $dnr
 mainip=`grep ADDR /etc/wwwacct.conf | awk '{print $2}'`
 logvars acct_num total_accts mainip syncstarttime userlist
