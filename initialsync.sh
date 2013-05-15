@@ -1,18 +1,30 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="May 10 2013"
+ver="May 15 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
 starttime=`date +%F.%T`
 scriptlogdir="/home/temp"
 scriptlog="${scriptlogdir}/initialsync.${starttime}.log"
-dnr=/root/didnotrestore.txt
 userlistfile=/root/userlist.txt
 rsyncflags="-avHl"
 mysqldumplog="/tmp/mysqldump.log"
 remoteusersfile="/home/temp/remoteusers.txt"
-[ -s $dnr ] && dnrusers=`cat $dnr`
+
+dnr=/root/didnotrestore.txt
+dnrold="${dnr}.${starttime}.bak"
+#back up current dnr file if it exists, and check dnrold for users that didn't restore later on (in the menu)
+if [ -s $dnr ]; then
+  dnrusers=`cat $dnr`
+  if ! [ -s $dnrold ]; then
+    mv $dnr $dnrold
+  else
+    > $dnr
+  fi
+  > $dnr
+fi
+
 > /tmp/remotefail.txt
 > /tmp/localfail.txt
 > /tmp/migration.rsync.log
@@ -96,12 +108,9 @@ if [[ ! "${STY}" ]]; then
 fi
 
 #check for didnotrestore now:
-if [ -s "$dnr" ]; then
-  ec lightRed "Found users that did not restore from a previous sync in $dnr!"
+if [ -s "$dnrold" ]; then
+  ec lightRed "Found users that did not restore from a previous sync in $dnrold! Press d to see these users."
   echo
-  #backup the dnr file so it will be fresh for this sync
-  mv ${dnr} ${dnr}.${starttime}.bak
-  > ${dnr}
   logvars dnrusers
 fi
 
@@ -153,6 +162,15 @@ while [ $mainloop == 0 ] ; do
   mainloop=1 ;;
  0) 
   echo "Bye..."; exit 0 ;;
+ d)
+  if [ -s ${dnrold} ]; then
+    cat ${dnrold}
+   else
+    echo "${dnrold} file not found! Quit mashing keys!"
+  fi
+  e2c
+  clear
+  ;; 
  *)  
    ec lightRed "Not a valid choice. Also, the game."; sleep 2 ; clear 
  esac
@@ -163,6 +181,8 @@ echo "Started at $starttime"
 [ $syncstarttime ] && echo "Sync started at $syncstarttime" 
 [ $syncendtime ] &&  echo "Sync finished at $syncendtime" 
 echo "Finished at `date +%F.%T`" 
+#cleanup
+mv /root/dblist.txt{,.$starttime}
 ec lightGreen 'Done!'  
 exit 0
 }
@@ -213,11 +233,11 @@ done
 dnrsync() {
   echo "DNR sync"
   #check the that dnr.starttime file exists, use it for list sync
-  if [ -s "${dnr}.${starttime}.bak" ]; then
+  if [ -s "${dnrold}" ]; then
     echo $dnrusers > $userlistfile
     listsync
   else
-    echo "Did not find any users in the ${dnr}.${starttime}.bak file. Try a list sync instead."
+    echo "Did not find any users in the ${dnrold} file. Try a list sync instead."
   fi
 }
 
@@ -796,6 +816,8 @@ if ! [ "$dbprefixvar" = "database_prefix=0" ]; then
   if yesNo 'Copy these databases to the new server? (adds to /root/dblist.txt)' ; then
    cat /home/temp/extradbs.txt >> /root/dblist.txt
   fi
+  #clear the extra dbs file so it wont interfere in future migrations.
+  > /home/temp/extradbs.txt
  fi
 
 else
