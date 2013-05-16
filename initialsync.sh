@@ -1,6 +1,6 @@
 #!/bin/bash
 #initalsync by abrevick@liquidweb.com
-ver="May 15 2013"
+ver="May 16 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -182,7 +182,9 @@ echo "Started at $starttime"
 [ $syncendtime ] &&  echo "Sync finished at $syncendtime" 
 echo "Finished at `date +%F.%T`" 
 #cleanup
-mv /root/dblist.txt{,.$starttime}
+if [ -s /root/dblist.txt ]; then 
+ mv /root/dblist.txt{,.$starttime}
+fi
 ec lightGreen 'Done!'  
 exit 0
 }
