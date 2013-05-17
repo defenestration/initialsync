@@ -1,6 +1,6 @@
 #!/bin/bash
-#initalsync by abrevick@liquidweb.com
-ver="May 16 2013"
+#initialsync by abrevick@liquidweb.com
+ver="May 17 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
