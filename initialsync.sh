@@ -1031,8 +1031,8 @@ for user in $userlist; do
   ec grey "${acct_progress} Packaging $user. "  
   /scripts/pkgacct --skiphomedir $user >> $scriptlog
   #check for location of packaged account ( could be home2 )
-  cpmovefiles=`find /home*/ -name cpmove-$user.tar.gz -maxdepth 1 -mtime -2`
-  #check if more than one cpmove file is found:
+  cpmovefiles=`find /home*/ -name cpmove-$user.tar.gz -maxdepth 1 -mtime -1 |head -n1`
+  #if more than one cpmove file is found, most likely /home2 is symlinked to /home, they should be the same file, mtime should weed out old copies of the backup. 
   cpmovefilecount=`echo $cpmovefiles | wc -w`
   if [[ $cpmovefilecount -eq 1 ]]; then
     #only 1 file found, continue.
@@ -1073,7 +1073,7 @@ for user in $userlist; do
       sleep 1
     fi
   else
-    #anythign other than 1 cpmove file was found, show error
+    #anything other than 1 cpmove file was found, show error
     ec lightRed "Found $cpmovefilecount cpmove files, dont know which one is good. User $user will not be copied."
     for file in $cpmovefiles; do 
       ls -lah $file;
