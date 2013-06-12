@@ -38,3 +38,4 @@
 # Apr 20 - clarified Override Ip check question text
 # May 09 - removed -qt from ssh in accountcheck(), it generated a hidden ^M character keeping the check from working.
 # May 10 - added option for DNR sync
+Jun 12 - EA config is only copied over to new server if EA is ran.

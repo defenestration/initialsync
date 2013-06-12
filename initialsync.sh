@@ -887,10 +887,7 @@ sleep 1
 
 upea() {
 echo
-echo "Copying over EasyApache configs and WHM packages and features..."
-#EA 
-#copy the EA config
-rsync -aqHe "ssh -p$port" /var/cpanel/easy/apache/ $ip:/var/cpanel/easy/apache/
+echo "Copying over WHM packages and features..."
 #Copy Cpanel packages
 rsync -aqHe "ssh -p$port" /var/cpanel/packages/ $ip:/var/cpanel/packages/
 #Copy features
@@ -990,6 +987,8 @@ fi
 #Easyapache
 if [ $ea ]; then
  ec yellow "Running EA..."
+ #copy the EA config
+ rsync -aqHe "ssh -p$port" /var/cpanel/easy/apache/ $ip:/var/cpanel/easy/apache/
  ssh $ip -p$port "/scripts/easyapache --build"
  unset mysqlupcheck
 fi
