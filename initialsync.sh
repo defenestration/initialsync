@@ -1,6 +1,6 @@
 #!/bin/bash
 #initialsync by abrevick@liquidweb.com
-ver="May 17 2013"
+ver="Jun 25 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -468,9 +468,11 @@ rndc reload
 nsdcheck=`ps aux |grep nsd |grep -v grep`
 logvars nsdcheck
 if [ "$nsdcheck" ]; then
- echo "Nsd found, reloading"
- nsdc rebuild
- nsdc reload
+ if [ `which nsdc` ]; then
+  echo "Nsd found, reloading"
+  nsdc rebuild
+  nsdc reload
+ fi
 fi
 }
 
