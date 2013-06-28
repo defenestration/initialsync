@@ -1,6 +1,6 @@
 #!/bin/bash
 #initialsync by abrevick@liquidweb.com
-ver="Jun 25 2013"
+ver="Jun 28 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -917,6 +917,10 @@ if yesNo "Want me to run EA on remote server?" ;then
 else
  echo 'Just trying to help :/'
  skippedea=1
+ if yesNo "Want to copy over the easyapache config to the new server?"; then
+   echo 'ok!'
+   rsync -aqHe "ssh -p$port" /var/cpanel/easy/apache/ $ip:/var/cpanel/easy/apache/
+ fi
 fi
 sleep 1
 }
