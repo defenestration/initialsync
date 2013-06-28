@@ -549,9 +549,9 @@ if [[ "$sshtest" > 0 ]]; then
   exit 3
 else
   ec lightGreen "Ssh connection to $ip succeded!"
+  ssh -p$port $ip "chmod 777 /var/run/screen"
 fi
 
-#ssh $ip -p$port "echo \'Connected!\';  cat /etc/hosts| grep $ip " 
 }
  
 
