@@ -1,6 +1,6 @@
 #!/bin/bash
 #initialsync by abrevick@liquidweb.com
-ver="Jun 28 2013"
+ver="Jul 03 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -549,7 +549,9 @@ if [[ "$sshtest" > 0 ]]; then
   exit 3
 else
   ec lightGreen "Ssh connection to $ip succeded!"
-  ssh -p$port $ip "chmod 777 /var/run/screen"
+  
+  ssh -p$port $ip "chmod 2755 /usr/bin/screen; chmod 775 /var/run/screen"
+
 fi
 
 }
