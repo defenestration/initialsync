@@ -1,6 +1,6 @@
 #!/bin/bash
 #initialsync by abrevick@liquidweb.com
-ver="Jul 03 2013"
+ver="Jul 11 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -1039,7 +1039,7 @@ for user in $userlist; do
   ec grey "${acct_progress} Packaging $user. "  
   /scripts/pkgacct --skiphomedir $user >> $scriptlog
   #check for location of packaged account ( could be home2 )
-  cpmovefiles=`find /home*/ -name cpmove-$user.tar.gz -maxdepth 1 -mtime -1 |head -n1`
+  cpmovefiles=`find /home*/ -maxdepth 1 -name cpmove-$user.tar.gz -mtime -1 |head -n1`
   #if more than one cpmove file is found, most likely /home2 is symlinked to /home, they should be the same file, mtime should weed out old copies of the backup. 
   cpmovefilecount=`echo $cpmovefiles | wc -w`
   if [[ $cpmovefilecount -eq 1 ]]; then
