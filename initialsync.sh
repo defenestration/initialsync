@@ -1,6 +1,6 @@
 #!/bin/bash
 #initialsync by abrevick@liquidweb.com
-ver="Jul 11 2013"
+ver="Aug 09 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -758,6 +758,7 @@ postgres=`ps aux |grep -e 'postgres' |grep -v grep |tail -n1`
 xcachefound=`ps aux | grep -e 'xcache' | grep -v grep | tail -n1`
 eaccelfound=`ps aux | grep -e 'eaccelerator' | grep -v grep |tail -n1`
 nginxfound=`ps aux | grep  -e 'nginx' |grep -v grep| tail -n1`
+lswsfound=`ps aux | grep  - e 'lsws' | grep -v grep | tail -n1`
 logvars ffmpeg imagick memcache java postgres xcachefound eaccelfound nginxfound
 }
 
@@ -1202,12 +1203,13 @@ echo
 ec yellow "===Final Checks===" 
 
 #3rdparty stuff for which there is no autoinstall for (yet)
-if [ "${xcachefound}${eaccelfound}${nginxfound}" ]; then
-echo '3rd party stuff found on the old server!'  
+if [ "${xcachefound}${eaccelfound}${nginxfound}${lswsfound}" ]; then
+ec yellow '3rd party stuff found on the old server!'  
 [ "$xcachefound" ] && echo "Xcache: $xcachefound" 
 [ "$eaccelfound" ] && echo "Eaccelerator: $eaccelfound" 
 [ "$nginxfound" ] && echo "Nginx: $nginxfound" 
-echo 'It is up to you to install these.'
+[ "$lswsfound" ] && echo "Litespeed: $lswsfound"
+ec yellow 'It is up to you to install these. Sorry bro/brosephina!'
 e2c
 fi
 
