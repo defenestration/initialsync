@@ -1,6 +1,6 @@
 #!/bin/bash
 #initialsync by abrevick@liquidweb.com
-ver="Aug 09 2013"
+ver="Sep 12 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -11,6 +11,7 @@ userlistfile=/root/userlist.txt
 rsyncflags="-avHl"
 mysqldumplog="/tmp/mysqldump.log"
 remoteusersfile="/home/temp/remoteusers.txt"
+sshargs="" #-t, -qt, -qtt, doesn't matter, all end up causing some sort of problem, best to leave blank and deal with the stdin: is not tty error.  -q doesn't cause  aproblem but doesn't make it quiet either, its mostly -t
 
 dnr=/root/didnotrestore.txt
 dnrold="${dnr}.${starttime}.bak"
@@ -55,7 +56,7 @@ greyBg="\033[1;37;40m"
 
 #echo in a color function
 ec() {
-#Usage: ec color "text"
+#Usage: ec $color "text"
 ecolor=${!1} #get the color
 shift #$1 is removed here
 #echo the rest
@@ -165,6 +166,10 @@ while [ $mainloop == 0 ] ; do
  d)
   if [ -s ${dnrold} ]; then
     cat ${dnrold}
+    if yesNo "Do you want to restore these users?"; then
+      dnrsync
+      mainloop=1
+    fi 
    else
     echo "${dnrold} file not found! Quit mashing keys!"
   fi
@@ -222,7 +227,7 @@ while [ $singleuserloop == 0 ]; do
     echo
     if yesNo "Remove ssh key from remote server?" ; then
       echo "Removing key..."
-      ssh -p$port $ip "rm ~/.ssh/authorized_keys ; cp -rp ~/.ssh/authorized_keys{.initialsyncbak,}"
+      ssh $sshargs -p$port $ip "rm ~/.ssh/authorized_keys ; cp -rp ~/.ssh/authorized_keys{.initialsyncbak,}"
     else
       echo "Leaving key."
     fi
@@ -387,7 +392,7 @@ echo "Generated hosts file at http://${ip}/hosts.txt."
 fi
 EOF
 rsync -aqHPe "ssh -p$port" /scripts/hosts.sh $ip:/scripts/
-ssh -p$port $ip "bash /scripts/hosts.sh"
+ssh $sshargs -p$port $ip "bash /scripts/hosts.sh"
 sleep 2
 }
 
@@ -398,7 +403,7 @@ if [ -d /var/cpanel/cluster ]; then
  echo 'Local DNS Clustering found!' 
  localcluster=1
 fi
-remotednscluster=`ssh -p$port $ip "if [ -d /var/cpanel/cluster ]; then echo \"Remote DNS Clustering found.\" ; fi" `
+remotednscluster=`ssh $sshargs -p$port $ip "if [ -d /var/cpanel/cluster ]; then echo \"Remote DNS Clustering found.\" ; fi" `
 logvars localcluster remotednscluster
 if [ "$remotednscluster" ]; then
  echo
@@ -541,7 +546,7 @@ echo "Copying Key to remote server..."
 #create .ssh directory
 #create authorized key file if it doesn't exist (for non-existing files) backup the file to syncbak, this will keep existing and blank files.
 #don't overwrite existing .initialsyncbak files.
-cat ~/.ssh/id_rsa.pub | ssh $ip -p$port "mkdir -p ~/.ssh ; if [ ! -f ~/.ssh/authorized_keys ] ; then touch ~/.ssh/authorized_keys ; fi; if [ ! -f ~/.ssh/authorized_keys.initialsyncbak ] ; then cp -rp ~/.ssh/authorized_keys{,.initialsyncbak} ; fi ; cat >> ~/.ssh/authorized_keys"
+cat ~/.ssh/id_rsa.pub | ssh $sshargs $ip -p$port "mkdir -p ~/.ssh ; if [ ! -f ~/.ssh/authorized_keys ] ; then touch ~/.ssh/authorized_keys ; fi; if [ ! -f ~/.ssh/authorized_keys.initialsyncbak ] ; then cp -rp ~/.ssh/authorized_keys{,.initialsyncbak} ; fi ; cat >> ~/.ssh/authorized_keys"
 sshtest=$?
 #test exit value of ssh command.
 if [[ "$sshtest" > 0 ]]; then 
@@ -550,7 +555,7 @@ if [[ "$sshtest" > 0 ]]; then
 else
   ec lightGreen "Ssh connection to $ip succeded!"
   
-  ssh -p$port $ip "chmod 2755 /usr/bin/screen; chmod 775 /var/run/screen"
+  ssh $sshargs -p$port $ip "chmod 2755 /usr/bin/screen; chmod 775 /var/run/screen"
 
 fi
 
@@ -560,7 +565,7 @@ fi
 accountcheck() { #check for users with the same name on each server:
 echo
 echo "Comparing accounts with destination server..." 
-ssh $ip -p$port "/bin/ls -A /var/cpanel/users/" > $remoteusersfile
+ssh $sshargs $ip -p$port "/bin/ls -A /var/cpanel/users/" > $remoteusersfile
 for user in $userlist ; do 
   if [ `grep "^$user$" "$remoteusersfile"` ]; then 
     echo $user
@@ -600,7 +605,7 @@ else
   sourceipcount=`cat /etc/ips | grep ^[0-9] | wc -l`
 fi
 # Check target server for number of dedicated IPs available
-destipcount=`ssh  $ip -p$port "cat /etc/ips |grep ^[0-9] | wc -l"`
+destipcount=`ssh $sshargs $ip -p$port "cat /etc/ips |grep ^[0-9] | wc -l"`
 logvars destipcount preliminary_ip_check server_main_ip sourceipcount
 echo "==Dedicated Ip Count==
 Source (Ips in use): $sourceipcount
@@ -635,7 +640,7 @@ grep ^NS[\ 0-9]  /etc/wwwacct.conf
 if yesNo "Set nameservers on remote host?" ;then
  grep ^NS[\ 0-9]  /etc/wwwacct.conf > /tmp/nameservers.txt
  rsync -avHPe "ssh -p$port" /tmp/nameservers.txt $ip:/tmp/
- ssh $sshopts $ip -p$port "cp -rp /etc/wwwacct.conf{,.bak} ;
+ ssh $sshargs $ip -p$port "cp -rp /etc/wwwacct.conf{,.bak} ;
  sed -i -e '/^NS[\ 0-9]/d' /etc/wwwacct.conf ;
  cat /tmp/nameservers.txt >> /etc/wwwacct.conf " 
 fi
@@ -661,7 +666,7 @@ for file in $apachefilelist; do
   cat /usr/local/apache/conf/includes/$file 
   ec cyan "================================="
   if yesNo "Found extra apache configuration in $file, shown above. copy to new server?";  then
-   ssh -p$port $ip "mv /usr/local/apache/conf/includes/$file{,.bak}"
+   ssh $sshargs -p$port $ip "mv /usr/local/apache/conf/includes/$file{,.bak}"
    rsync -avHPe "ssh -p$port" /usr/local/apache/conf/includes/$file $ip:/usr/local/apache/conf/includes/
   fi
  fi
@@ -695,7 +700,7 @@ else
  #check if phpver is 4 or 5, old EA versions will fail the rebuild_phpconf command
  case $phpver in
  [45]) 
- ssh $ip -p$port "/usr/local/cpanel/bin/rebuild_phpconf --current > /tmp/phpconf.`date +%F.%T`.txt ;/usr/local/cpanel/bin/rebuild_phpconf $phpver $php4sapi $php5sapi $phpsuexec "  
+ ssh $sshargs $ip -p$port "/usr/local/cpanel/bin/rebuild_phpconf --current > /tmp/phpconf.`date +%F.%T`.txt ;/usr/local/cpanel/bin/rebuild_phpconf $phpver $php4sapi $php5sapi $phpsuexec "  
  ;;
  *)  echo "Got unexpected output from /usr/local/cpanel/bin/rebuild_phpconf --current, skipping..." 
      phpapicheck=1 
@@ -709,7 +714,7 @@ phpmemcheck(){
 echo
 echo "Checking php memory limit..."  
 phpmem=`php -i |grep ^memory_limit |cut -d" " -f3`
-rphpmem=`ssh $ip -p$port 'php -i |grep ^memory_limit |cut -d" " -f3'`
+rphpmem=`ssh $sshargs $ip -p$port 'php -i |grep ^memory_limit |cut -d" " -f3'`
 logvars phpmem
 logvars rphpmem
 if [ $phpmem ]; then
@@ -717,7 +722,7 @@ if [ $phpmem ]; then
   if [[ $phpmem != $rphpmem ]]; then
    phpmemcmd=`echo 'sed -i '\''s/\(memory_limit\ =\ \)[0-9]*M/\1'$phpmem'/'\'' /usr/local/lib/php.ini'`
    logvars phpmemcmd
-   ssh $ip -p$port "cp -rp /usr/local/lib/php.ini{,.bak} ; $phpmemcmd ; service httpd restart" 
+   ssh $sshargs $ip -p$port "cp -rp /usr/local/lib/php.ini{,.bak} ; $phpmemcmd ; service httpd restart" 
   else
    echo "Old memorylimit $phpmem matches new $rphpmem, skipping..." 
   fi
@@ -758,7 +763,7 @@ postgres=`ps aux |grep -e 'postgres' |grep -v grep |tail -n1`
 xcachefound=`ps aux | grep -e 'xcache' | grep -v grep | tail -n1`
 eaccelfound=`ps aux | grep -e 'eaccelerator' | grep -v grep |tail -n1`
 nginxfound=`ps aux | grep  -e 'nginx' |grep -v grep| tail -n1`
-lswsfound=`ps aux | grep  - e 'lsws' | grep -v grep | tail -n1`
+lswsfound=`ps aux | grep  -e 'lsws' | grep -v grep | tail -n1`
 logvars ffmpeg imagick memcache java postgres xcachefound eaccelfound nginxfound
 }
 
@@ -767,7 +772,7 @@ mysqlcheck() {
 echo
 echo "Checking mysql versions..." 
 smysqlv=`grep -i mysql-version /var/cpanel/cpanel.config | cut -d= -f2`
-dmysqlv=`ssh $ip -p$port 'grep -i mysql-version /var/cpanel/cpanel.config | cut -d= -f2'`
+dmysqlv=`ssh $sshargs $ip -p$port 'grep -i mysql-version /var/cpanel/cpanel.config | cut -d= -f2'`
 logvars smysqlv dmysqlv
 echo "Source: $smysqlv" 
 echo "Destination: $dmysqlv" 
@@ -784,7 +789,7 @@ if yesNo "Change remote server's Mysql version?"; then
     read newmysqlver
     case $newmysqlver in
       5.0|5.1|5.5)
-        ec green "New server will be updated to $newmysqlver" 
+        ec green "New server's mysql will be changed to $newmysqlver" 
         mysqlup=1
         mysqlverloop=1;;
       n)
@@ -794,7 +799,7 @@ if yesNo "Change remote server's Mysql version?"; then
         ec red "Incorrect input, try again." ;;
     esac
   done
-  phpvr=`ssh $ip -p$port "php -v |head -n1 |cut -d\" \" -f2"`     #get remote php version now since mysql will not allow us to check later.
+  phpvr=`ssh $sshargs $ip -p$port "php -v |head -n1 |cut -d\" \" -f2"`     #get remote php version now since mysql will not allow us to check later.
   logvars phpvr mysqlup newmysqlver smysqlv
 fi
 sleep 1
@@ -855,14 +860,14 @@ fi
 
 gcccheck() {
 echo 'Checking for gcc on new server, because some newer storm servers dont have gcc installed so EA and possibly other things will fail to install.'  
-gcccheck=$(ssh -p$port $ip "rpm -qa gcc")
+gcccheck=$(ssh $sshargs -p$port $ip "rpm -qa gcc")
 logvars gcccheck
 if [ "$gcccheck" ]; then
   echo "Gcc found, continuing..." 
 else
   echo 'Gcc not found, running "yum install gcc" on remote server. You may have to hit "y" then Enter to install.'  
   sleep 3
-  ssh -p$port $ip "yum -y install gcc"
+  ssh $sshargs -p$port $ip "yum -y install gcc"
 fi
 }
 
@@ -871,7 +876,7 @@ echo
 echo "Checking Cpanel versions..." 
 #upcp if local version is higher than remote
 cpver=`cat /usr/local/cpanel/version`
-rcpver=`ssh $ip -p$port "cat /usr/local/cpanel/version"`
+rcpver=`ssh $sshargs $ip -p$port "cat /usr/local/cpanel/version"`
 if  [[ $cpver > $rcpver ]]; then
   echo "This server has $cpver" 
   echo "Remote server has $rcpver" 
@@ -902,12 +907,12 @@ rsync -aqHe "ssh -p$port" /var/cpanel/features/ $ip:/var/cpanel/features/
 phpv=`php -v |head -n1|cut -d" " -f2`
 #check if the var is set by the mysql function
 if ! [ $phpvr ]; then
- phpvr=`ssh $ip -p$port "php -v |head -n1 |cut -d\" \" -f2"`
+ phpvr=`ssh $sshargs $ip -p$port "php -v |head -n1 |cut -d\" \" -f2"`
 fi
 
 echo "
 Available software versions on remote server:"
-ssh -p $port $ip "/scripts/easyapache --latest-versions"
+ssh $sshargs -p $port $ip "/scripts/easyapache --latest-versions"
 
 if [[ $phpv < 5.3 ]];then 
  ec red "If the php version does not match any of the above, you should manually run EA!"
@@ -952,7 +957,7 @@ e2c
 
 #lwbake,plbake
 ec yellow "Installing lwbake and plbake"
-ssh $ip -p$port "wget -O /scripts/lwbake http://layer3.liquidweb.com/scripts/lwbake;
+ssh $sshargs $ip -p$port "wget -O /scripts/lwbake http://layer3.liquidweb.com/scripts/lwbake;
 chmod 700 /scripts/lwbake
 wget -O /scripts/plbake http://layer3.liquidweb.com/scripts/plBake/plBake
 chmod 700 /scripts/plbake"
@@ -960,22 +965,22 @@ chmod 700 /scripts/plbake"
 #java
 if [ "$java" ];then
  ec yellow "Java found, installing..."
- ssh $ip -p $port "/scripts/plbake java"
+ ssh $sshargs $ip -p $port "/scripts/plbake java"
 fi
 
 #upcp
 if [ $upcp ]; then
  ec yellow "Running Upcp..."
  sleep 2
- ssh $ip -p$port "/scripts/upcp"
+ ssh $sshargs $ip -p$port "/scripts/upcp"
 fi
 
 #mysql
 if [ $mysqlup ]; then
  ec yellow "Reinstalling mysql..."
  #mysql 5.5 won't start if safe-show-database and skip-locking are in my.cnf
- remotecpanelversion=` ssh $ip -p$port "cat /usr/local/cpanel/version"` #cant set variables in the next script for some reason
- ssh $ip -p$port "
+ remotecpanelversion=` ssh $sshargs $ip -p$port "cat /usr/local/cpanel/version"` #cant set variables in the next script for some reason
+ ssh $sshargs $ip -p$port "
  sed -i.bak /mysql-version/d /var/cpanel/cpanel.config ; 
  echo mysql-version=$newmysqlver >> /var/cpanel/cpanel.config ; 
  cp -rp /etc/my.cnf{,.bak} ; 
@@ -989,6 +994,14 @@ if [ $remotecpanelversion > 11.36.0 ]; then
 else
   /scripts/mysqlup --force
 fi"
+#double check that it is installed and working, or pause
+ec yellow "Verifying mysql is started on new server..."
+ssh -p $port $ip "service mysql status"
+mysqlstatus=$?
+if [ $mysqlstatus -gt 0  ];then
+  ec lightRed "Mysql failed to start on new server, please check it out..."
+  e2c
+fi
  echo "Mysql update completed, remember EA will need to be ran."
  mysqlupcheck=1
 fi
@@ -998,7 +1011,7 @@ if [ $ea ]; then
  ec yellow "Running EA..."
  #copy the EA config
  rsync -aqHe "ssh -p$port" /var/cpanel/easy/apache/ $ip:/var/cpanel/easy/apache/
- ssh $ip -p$port "/scripts/easyapache --build"
+ ssh $sshargs $ip -p$port "/scripts/easyapache --build"
  unset mysqlupcheck
 fi
 
@@ -1006,13 +1019,13 @@ fi
 if [ $postgres ]; then
  ec yellow "Installing Postgresql..."
  #use expect to install since it asks for input
- ssh $ip -p$port 'cp -rp /var/lib/pgsql{,.bak}
+ ssh $sshargs $ip -p$port 'cp -rp /var/lib/pgsql{,.bak}
  expect -c "spawn /scripts/installpostgres
 expect \"Are you sure you wish to proceed? \"
 send \"yes\r\"
 expect eof"'
  rsync -avHPe "ssh -p$port" /var/lib/pgsql/data/pg_hba.conf $ip:/var/lib/pgsql/data/
- ssh $ip -p$port "/scripts/restartsrv_postgres"
+ ssh $sshargs $ip -p$port "/scripts/restartsrv_postgres"
 fi
 
 }
@@ -1069,7 +1082,7 @@ for user in $userlist; do
       fi
       logvars restorecmd
       #do the restorepkg command
-      ssh $ip -p$port "mkdir -p /home/temp ;
+      ssh $sshargs $ip -p$port "mkdir -p /home/temp ;
       mv /home/cpmove-$user.tar.gz /home/temp/;
       $restorecmd ; 
       mv /home/temp/cpmove-$user.tar.gz /home/" 
@@ -1100,11 +1113,11 @@ rsynchomedirs() {
 #to be ran inside of a for user in userlist loop, from both initial and final syncs
 #for home2 
 userhomelocal=`grep  ^$user: /etc/passwd |cut -d: -f6 `
-userhomeremote=`ssh $ip -p$port " grep  ^$user: /etc/passwd |cut -d: -f6"` 
+userhomeremote=`ssh $sshargs $ip -p$port " grep  ^$user: /etc/passwd |cut -d: -f6"` 
 #rsync
 echo
 #check if cpanel user exists on remote server
-ruser=`ssh $ip -p$port "cd /var/cpanel/users/; ls $user"`
+ruser=`ssh $sshargs $ip -p$port "cd /var/cpanel/users/; ls $user"`
 logvars userhomeremote userhomelocal ruser
 if [ "$user" == "$ruser" ]; then 
   #check for non-empty vars
@@ -1170,13 +1183,13 @@ php3rdpartyapps() {
 #ffmpeg
 if [ $ffmpeg ] ; then
  echo "Ffmpeg found, installing on new server..." 
- ssh $ip -p$port "/scripts/lwbake ffmpeg-php "
+ ssh $sshargs $ip -p$port "/scripts/lwbake ffmpeg-php "
 fi
 
 #imagick
 if [ $imagick ] ; then
  echo "Imagemagick found, installing on new server..." 
- ssh $ip -p$port "
+ ssh $sshargs $ip -p$port "
  /scripts/lwbake imagemagick
  /scripts/lwbake imagick
  /scripts/lwbake magickwand"
@@ -1186,7 +1199,7 @@ fi
 if [ "$memcache" ]; then
  echo "Memcache found, installing remotely..." 
  echo
- ssh $ip -p$port '
+ ssh $sshargs $ip -p$port '
  wget -O /scripts/confmemcached.pl http://layer3.liquidweb.com/scripts/confMemcached/confmemcached.pl
 chmod +x /scripts/confmemcached.pl
 /scripts/confmemcached.pl --memcached-full
@@ -1257,7 +1270,7 @@ fi
 
 #check for alternate exim ports
 eximports=`grep ^daemon_smtp_ports /etc/exim.conf`
-eximportsremote=`ssh $ip -p$port 'grep daemon_smtp_ports /etc/exim.conf'`
+eximportsremote=`ssh $sshargs $ip -p$port 'grep daemon_smtp_ports /etc/exim.conf'`
 logvars eximportsremote eximports
 if [ "$eximports" != "$eximportsremote" ]; then
  ec lightRed 'Alternate smtp ports found!' 
@@ -1274,7 +1287,7 @@ echo "===End Final Checks==="
 mysqldumpinitialsync() {
 echo
 #backup dbdumps folder on new server.
-ssh $ip -p$port  "test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%R`.bak}"
+ssh $sshargs $ip -p$port  "test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%R`.bak}"
 #also check and backup /home/dbdumps on source server
 test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%R`.bak}
 #dump backups on current server and copy them over.
@@ -1283,7 +1296,7 @@ if [ -s /root/dblist.txt ]; then
  echo "Found extra databases to dump..." 
  for db in `cat /root/dblist.txt`; do 
   mysqldumpfunction
-  ssh $ip -p$port "mysqladmin create $db"
+  ssh $sshargs $ip -p$port "mysqladmin create $db"
  done
  rsync --progress -avHlze "ssh -p$port" /home/dbdumps $ip:/home/
 # ssh $ip -p$port "wget migration.sysres.liquidweb.com/dbsync.sh -O /scripts/dbsync.sh; screen -S dbsync -d -m bash /scripts/dbsync.sh" &
@@ -1322,14 +1335,14 @@ else
 fi
 EOF
 rsync -aHPe "ssh -p$port" /scripts/dbsync.sh $ip:/scripts/
-ssh $ip -p$port "screen -S dbsync -d -m bash /scripts/dbsync.sh" &
+ssh $sshargs $ip -p$port "screen -S dbsync -d -m bash /scripts/dbsync.sh" &
 }
 
 mysqldbfinalsync() {
 echo "Dumping the databases..." 
 test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%T`.bak}
 mkdir -p /home/dbdumps
-ssh $ip -p$port 'test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%T`.bak}'
+ssh $sshargs $ip -p$port 'test -d /home/dbdumps && mv /home/dbdumps{,.`date +%F.%T`.bak}'
 mysqldumpver=`mysqldump --version |cut -d" " -f6 |cut -d, -f1`
 #dump user dbs
 for each in $userlist; do 
@@ -1498,7 +1511,7 @@ fi
 echo "============"
 echo
 if yesNo "Remove SSH key from new server?"; then
-  ssh -p${port} root@$ip "
+  ssh $sshargs -p${port} root@$ip "
   mv ~/.ssh/authorized_keys{,.initialsync.$starttime}; 
   if [ -f ~/.ssh/authorized_keys.initialsyncbak ]; then 
     cp -rp ~/.ssh/authorized_keys{.initialsyncbak,}; 
@@ -1512,11 +1525,11 @@ finalfixes() {
 #in final sync and initial sync
 #fix mail permissisons
 echo "Fixing mail permissions on new server."
-ssh $ip -p$port "screen -S mailperm -d -m /scripts/mailperm" &
+ssh $sshargs $ip -p$port "screen -S mailperm -d -m /scripts/mailperm" &
 
 #fix quotas
 echo "Starting a screen to fix cpanel quotas."
-ssh $ip -p$port "screen -S fixquotas -d -m /scripts/fixquotas" &
+ssh $sshargs $ip -p$port "screen -S fixquotas -d -m /scripts/fixquotas" &
 }
 
 rsyncupgrade () {
@@ -1551,8 +1564,8 @@ ssh -p$port $ip "screen -S geminstall -d -m bash /root/geminstall.sh" &
 cpbackupcheck() {
 echo "
 Checking if cpanel backups are enabled on new server." 
-backupacctssetting=`ssh -p$port $ip "grep ^BACKUPACCTS /etc/cpbackup.conf" | awk '{print $2}' ` 
-backupenablesetting=`ssh -p$port $ip "grep ^BACKUPENABLE /etc/cpbackup.conf" | awk '{print $2}' `
+backupacctssetting=`ssh $sshargs -p$port $ip "grep ^BACKUPACCTS /etc/cpbackup.conf" | awk '{print $2}' ` 
+backupenablesetting=`ssh $sshargs -p$port $ip "grep ^BACKUPENABLE /etc/cpbackup.conf" | awk '{print $2}' `
 logvars backupenablesetting backupacctssetting
 if [ $backupacctssetting = "yes" ]; then 
   #backupaccts is true, check for backupenable also
@@ -1570,7 +1583,7 @@ fi
 cpbackupenable(){
 echo "Cpanel backups are disabled on $ip" 
 if yesNo "Do you want to enable backups on the remote server?"; then
-    ssh -p$port $ip "sed -i.syncbak -e 's/^\(BACKUPACCTS\).*/\1 yes/g' -e 's/^\(BACKUPENABLE\).*/\1 yes/g' /etc/cpbackup.conf"
+    ssh $sshargs -p$port $ip "sed -i.syncbak -e 's/^\(BACKUPACCTS\).*/\1 yes/g' -e 's/^\(BACKUPENABLE\).*/\1 yes/g' /etc/cpbackup.conf"
 fi
 }
 
@@ -1587,7 +1600,7 @@ echo
 echo "Matching PEAR packages..."
 pear list | egrep [0-9]{1}.[0-9]{1} | awk '{print$1}' > /root/pearlist.txt
 scp -P$port /root/pearlist.txt root@$ip:/root/
-ssh $ip -p$port "cat /root/pearlist.txt |xargs pear install $pear"
+ssh $sshargs $ip -p$port "cat /root/pearlist.txt |xargs pear install $pear"
 }
 
 modsecmatch() {
@@ -1601,14 +1614,14 @@ modsecmatch() {
   #if rpm finds multiple installed modsec?
   echo "Modsec version $modsec found."
   #check remote server for modsec version
-  modsecremote=`ssh -p$port $ip 'rpm -qa --queryformat "[%{name}\n]" lp-modsec*' `
+  modsecremote=`ssh $sshargs -p$port $ip 'rpm -qa --queryformat "[%{name}\n]" lp-modsec*' `
   #turtle-rules files: /usr/local/apache/conf/turtle-rules/modsec/00_asl_whitelist.conf
   #/usr/local/apache/conf/modsec/lw_whitelist.conf /usr/local/apache/conf/modsec2/lw_whitelist.conf
   
 
   modseccopy() {
     #install on remote server?    
-    ssh -p$port $ip "cp -rp $modsecwlist{,.initialsync.$starttime.bak} "
+    ssh $sshargs -p$port $ip "cp -rp $modsecwlist{,.initialsync.$starttime.bak} "
     rsync -avHP -e "ssh -p$port" $modsecwlist $ip:$modsecwlist
   }
   case $modsec in 
@@ -1639,6 +1652,35 @@ postmigrationhook() {
     echo "None found."
   fi
 }
+
+control_c() {
+  #if user hits control-c 
+  echo
+  ec lightRed "Control-C pushed, exiting..."
+  #if ip variable exists, and if our key exists on the remote server, clean it up.
+  if [ -f "/root/dest.ip.txt" ]; then
+    #variables from main script will not transfer over for some reason, so create new variables.
+    ip=`cat /root/dest.ip.txt`
+    port=`cat /root/dest.port.txt`
+    #test if sshkey is working, ignore errors and don't prompt
+    ssh -q -o BatchMode=yes -o StrictHostKeyChecking=no $ip -p$port "echo Found ssh key on remote server, removing..."
+    sshtest=$?
+    #test exit value of ssh command.
+    if [[ "$sshtest" == 0 ]]; then
+      ssh $sshargs -p${port} root@$ip "
+mv ~/.ssh/authorized_keys{,.initialsync.$starttime}; 
+if [ -f ~/.ssh/authorized_keys.initialsyncbak ]; then 
+    cp -rp ~/.ssh/authorized_keys{.initialsyncbak,}; 
+fi"
+    ec lightRed "Clean up any data/users accidentally transferred to remote server! This script will not do it for you."
+    fi
+  fi
+  ec yellow "Bye!"
+  exit 10
+}
+
+
+trap control_c SIGINT
 
 #run main last so all functions are loaded
 main | logit
