@@ -1,6 +1,6 @@
 #!/bin/bash
 #initialsync by abrevick@liquidweb.com
-ver="Sep 12 2013"
+ver="Sep 13 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -1101,7 +1101,7 @@ for user in $userlist; do
       ls -lah $file;
     done
     echo $user >> $dnr
-    e2c 
+#    e2c 
   fi
   acct_num=$(( $acct_num+1 ))
 done  
