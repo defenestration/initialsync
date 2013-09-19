@@ -1,6 +1,6 @@
 #!/bin/bash
 #initialsync by abrevick@liquidweb.com
-ver="Sep 13 2013"
+ver="Sep 19 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -399,11 +399,11 @@ sleep 2
 dnsclustercheck() {
 echo 
 echo "Checking for DNS clustering..." 
-if [ -d /var/cpanel/cluster ]; then
+if [ -f /var/cpanel/useclusteringdns ]; then
  echo 'Local DNS Clustering found!' 
  localcluster=1
 fi
-remotednscluster=`ssh $sshargs -p$port $ip "if [ -d /var/cpanel/cluster ]; then echo \"Remote DNS Clustering found.\" ; fi" `
+remotednscluster=`ssh $sshargs -p$port $ip "if [ -f /var/cpanel/useclusteringdns ]; then echo \"Remote DNS Clustering found.\" ; fi" `
 logvars localcluster remotednscluster
 if [ "$remotednscluster" ]; then
  echo
@@ -1603,7 +1603,7 @@ scp -P$port /root/pearlist.txt root@$ip:/root/
 ssh $sshargs $ip -p$port "cat /root/pearlist.txt |xargs pear install $pear"
 }
 
-modsecmatch() {
+modsecmatch() { #not used... yet
   #centos=`cat /etc/redhat-release |cut -d" " -f3`
   #check for installed modsec version
   #if 5 or less, lpyum is used, 6 uses regular yum
