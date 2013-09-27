@@ -1,6 +1,6 @@
 #!/bin/bash
 #initialsync by abrevick@liquidweb.com
-ver="Sep 19 2013"
+ver="Sep 27 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -1111,9 +1111,8 @@ syncendtime=`date +%F.%T`
 
 rsynchomedirs() { 
 #to be ran inside of a for user in userlist loop, from both initial and final syncs
-#for home2 
-userhomelocal=`grep  ^$user: /etc/passwd |cut -d: -f6 `
-userhomeremote=`ssh $sshargs $ip -p$port " grep  ^$user: /etc/passwd |cut -d: -f6"` 
+userhomelocal=`grep  ^$user: /etc/passwd  | tail -n1 |cut -d: -f6 `
+userhomeremote=`ssh $sshargs $ip -p$port " grep  ^$user: /etc/passwd | tail -n1 |cut -d: -f6"` 
 #rsync
 echo
 #check if cpanel user exists on remote server
