@@ -461,12 +461,12 @@ lowerttls() {
 echo
 echo "Lowering TTLs..." 
 #lower ttls, switched to find command for a lot of domains
-#sed -i.lwbak -e 's/^\$TTL.*/$TTL 300/g' -e 's/[0-9]\{10\}/'`date +%Y%m%d%H`'/g' /var/named/*.db
-#find /var/named/ -name \*.db -exec sed -i.lwbak -e 's/^\$TTL.*/$TTL 300/g' -e 's/[0-9]\{10\}/'`date +%Y%m%d%H`'/g' {} \;
-#switched to perl as sed -i doesn't exist in old versions of sed
-find /var/named/ -name \*.db -exec perl -pi -e 's/^\$TTL.*/\$TTL 300/g' {} \;
-find /var/named/ -name \*.db -exec perl -pi -e 's/[0-9]{10}/'`date +%Y%m%d%H`'/g' {} \;
 
+#switched to perl as sed -i doesn't exist in old versions of sed
+find /var/named/ -name \*.db -exec perl -p -i.lwbak -e 's/^\$TTL.*/\$TTL 300/g' {} \;
+find /var/named/ -name \*.db -exec perl -pi -e 's/[0-9]{10}/'`date +%Y%m%d%H`'/g' {} \;
+#jwarrens A record reducer:
+find /var/named/ -name \*.db -exec perl -pi -e 's/^([\w.\-]+[^\S\n]+)[0-9]+([^\S\n]+IN[^\S\n]+A[^\S\n]+[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+.*$)/\1\Q300\E\2/g' {} \;
 
 rndc reload
 #for the one time i encountered NSD
