@@ -1,6 +1,6 @@
 #!/bin/bash
 #initialsync by abrevick@liquidweb.com
-ver="Nov 07 2013"
+ver="Nov 08 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -785,10 +785,10 @@ fi
 if yesNo "Change remote server's Mysql version?"; then
   mysqlverloop=0
   while [ $mysqlverloop == 0 ]; do #asking for user input, so check for errors.
-    echo -e "Please input desired mysql version, either 5.0, 5.1 or 5.5, or n to cancel: " #should really be upgrading to these newer versions, older than 5.0 isn't supported in cpanel 11.36
+    echo -e "Please input desired mysql version, either 5.1 or 5.5, or n to cancel: " #should really be upgrading to these newer versions, older than 5.0 isn't supported in cpanel 11.36, older than 5.1 isn't supported in 11.40
     read newmysqlver
     case $newmysqlver in
-      5.0|5.1|5.5)
+      5.1|5.5)
         ec green "New server's mysql will be changed to $newmysqlver" 
         mysqlup=1
         mysqlverloop=1;;
@@ -980,6 +980,7 @@ if [ $mysqlup ]; then
  ec yellow "Reinstalling mysql..."
  #mysql 5.5 won't start if safe-show-database and skip-locking are in my.cnf
  remotecpanelversion=` ssh $sshargs $ip -p$port "cat /usr/local/cpanel/version"` #cant set variables in the next script for some reason
+
  ssh $sshargs $ip -p$port "
  sed -i.bak /mysql-version/d /var/cpanel/cpanel.config ; 
  echo mysql-version=$newmysqlver >> /var/cpanel/cpanel.config ; 
@@ -994,6 +995,7 @@ if [ $remotecpanelversion > 11.36.0 ]; then
 else
   /scripts/mysqlup --force
 fi"
+
 #double check that it is installed and working, or pause
 ec yellow "Verifying mysql is started on new server..."
 ssh -p $port $ip "service mysql status"
