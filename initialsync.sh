@@ -1,6 +1,6 @@
 #!/bin/bash
 #initialsync by abrevick@liquidweb.com
-ver="Nov 08 2013"
+ver="Nov 22 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -573,14 +573,16 @@ for user in $userlist ; do
 done >> /tmp/userexists.txt
 #check for userexists.txt greater than 0
 if [ -s /tmp/userexists.txt ]; then
- ec lightRed 'Accounts that conflict with the destination server:' 
+ ec lightRed '\\\Accounts that conflict with the destination server///' 
  cat /tmp/userexists.txt 
- if yesNo "Y to continue, N to exit."; then
-  echo "Continuing..."
- else
-  echo "Exiting..."
-  exit 0
- fi
+ ec lightRed '^^^Accounts that conflict with the destination server^^^'
+ exit 20
+ # if yesNo "Y to continue, N to exit."; then
+ #  echo "Continuing..."
+ # else
+ #  echo "Exiting..."
+ #  exit 0
+ # fi
 else
   echo "No conflicting accounts found."
 fi
