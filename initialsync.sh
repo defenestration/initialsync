@@ -576,6 +576,7 @@ if [ -s /tmp/userexists.txt ]; then
  ec lightRed '\\\Accounts that conflict with the destination server///' 
  cat /tmp/userexists.txt 
  ec lightRed '^^^Accounts that conflict with the destination server^^^'
+ ec yellow "Only put accounts you want to migrate in /root/userlist.txt, or remove the accounts from the destination server."
  exit 20
  # if yesNo "Y to continue, N to exit."; then
  #  echo "Continuing..."
