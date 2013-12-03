@@ -1,6 +1,6 @@
 #!/bin/bash
 #initialsync by abrevick@liquidweb.com
-ver="Nov 22 2013"
+ver="Dec 03 2013"
 # http://migration.sysres.liquidweb.com/initialsync.sh
 # https://github.com/defenestration/initialsync
 
@@ -1373,13 +1373,14 @@ mysqldumpfunction() {
 #should be run inside a loop, where db is your database name
 echo "Dumping $db" | tee -a $mysqldumplog; 
 mysqldumpopts=""
-#mysqldump log-error doesn't work for versions less than 5.0.42 
+#mysqldump log-error, routines, doesn't work for versions less than 5.0.42 
 if [[ $mysqldumpver  > 5.0.42 ]]; then 
   mysqldumpopts=" --routines --force --log-error=${mysqldumplog} "
+  mysqldump --opt ${mysqldumpopts} $db > /home/dbdumps/$db.sql
 else
-  mysqldumpopts="--routines "
+  mysqldump --opt ${mysqldumpopts} $db > /home/dbdumps/$db.sql | tee -a $mysqldumplog
 fi
-mysqldump --opt ${mysqldumpopts} $db > /home/dbdumps/$db.sql
+
 
 }
 
