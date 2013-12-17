@@ -1376,9 +1376,9 @@ mysqldumpopts=""
 #mysqldump log-error, routines, doesn't work for versions less than 5.0.42 
 if [[ $mysqldumpver  > 5.0.42 ]]; then 
   mysqldumpopts=" --routines --force --log-error=${mysqldumplog} " 
-  mysqldump --opt -Q ${mysqldumpopts} $db > /home/dbdumps/$db.sql
+  mysqldump --opt ${mysqldumpopts} $db > /home/dbdumps/$db.sql
 else
-  mysqldump --opt ${mysqldumpopts} $db > /home/dbdumps/$db.sql | tee -a $mysqldumplog
+  mysqldump --opt -Q ${mysqldumpopts} $db > /home/dbdumps/$db.sql | tee -a $mysqldumplog
 fi
 
 
